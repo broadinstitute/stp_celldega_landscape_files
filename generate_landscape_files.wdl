@@ -53,7 +53,7 @@ PY
   }
 
   runtime {
-    docker: "jishar7/celldega_landscape_files@sha256:7bf505de060ef1fa56ccffcfbf5197e7c0f9b9187936a1b426f952e71ce34a16"
+    docker: "jishar7/celldega_landscape_files@sha256:331483db81cd7646674a6c4a67ca6874cfc477833afd4796a24919a5db62ffbc"
     memory: "200 GB"
     disks: "local-disk 200 HDD"
     preemptible: 0

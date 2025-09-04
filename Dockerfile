@@ -8,6 +8,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
+        build-essential \
+        unzip \
         ca-certificates \
         curl \
         gnupg \
@@ -21,8 +23,7 @@ RUN set -eux; \
         libvips \
         libvips-tools \
         libvips-dev \
-        **build-essential \
-        pkg-config**; \
+        pkg-config; \
     install -d -m 0755 /etc/apt/keyrings; \
     curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
       | gpg --dearmor -o /etc/apt/keyrings/google-cloud-sdk.gpg; \
