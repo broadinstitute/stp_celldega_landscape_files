@@ -5,7 +5,7 @@ workflow LandscapeFiles {
   input {
     String sample
     String data_dir
-    String landscape_files_dir_name
+    String bucket_path_landscape_files
     Int tile_size = 250
   }
 
@@ -13,7 +13,7 @@ workflow LandscapeFiles {
     input:
       sample = sample,
       data_dir = data_dir,
-      landscape_files_dir_name = landscape_files_dir_name,
+      bucket_path_landscape_files = bucket_path_landscape_files,
       tile_size = tile_size
   }
 }
@@ -23,7 +23,7 @@ task generate_landscape_files {
   input {
     String sample
     String data_dir
-    String landscape_files_dir_name
+    String bucket_path_landscape_files
     Int tile_size
   }
 
@@ -32,7 +32,7 @@ task generate_landscape_files {
     set -euo pipefail
 
     echo "Copying input data from GCS..."
-    gcloud storage cp -r "~{data_dir}/~{sample}" "/cromwell_root/"
+    gcloud storage rsync -r "~{data_dir}/~{sample}" "/cromwell_root/"
 
     echo "Running celldega..."
     python3 <<'PY'
@@ -42,18 +42,13 @@ dega.pre.main(
     sample="~{sample}",
     data_root_dir="/cromwell_root",
     tile_size=~{tile_size},
-    path_landscape_files="/cromwell_root/~{landscape_files_dir_name}",
+    path_landscape_files="/cromwell_root/landscape_files_temp",
     use_int_index=True,
 )
 PY
 
-  echo "Zipping the entire landscape output directory..."
-  tar -czf "~{landscape_files_dir_name}.tar.gz" -C "/cromwell_root" "~{landscape_files_dir_name}"
+  gcloud storage rsync -r "/cromwell_root/landscape_files_temp/." "~{bucket_path_landscape_files}/~{sample}/"
 >>>
-
-  output {
-    File landscape_archive = "~{landscape_files_dir_name}.tar.gz"
-  }
 
   runtime {
     docker: "jishar7/celldega_landscape_files@sha256:331483db81cd7646674a6c4a67ca6874cfc477833afd4796a24919a5db62ffbc"
