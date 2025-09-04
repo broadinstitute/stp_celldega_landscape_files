@@ -29,30 +29,31 @@ task generate_landscape_files {
 
   command <<<
     #!/bin/bash
+    set -euo pipefail
 
     echo "Copying input data from GCS..."
-    gcloud storage cp -r "${data_dir}" "./data_input"
+    gcloud storage cp -r "~{data_dir}/~{sample}" "./data"
 
     echo "Running celldega..."
-    python3 <<EOF
+    python3 <<'PY'
 import celldega as dega
 
 dega.pre.main(
-    sample="${sample}",
-    data_root_dir="data_input",
-    tile_size=${tile_size},
-    path_landscape_files="${path_landscape_files}",
+    sample=~{sample},
+    data_root_dir="data",
+    tile_size=~{tile_size},
+    path_landscape_files=~{path_landscape_files},
     use_int_index=True,
 )
-EOF
+PY
   >>>
 
   output {
-    Array[File] landscape_files = glob("~{path_landscape_files}/**")
+    Array[File] landscape_files = glob(path_landscape_files + "/**")
   }
 
   runtime {
-    docker: "jishar7/celldega_landscape_files:sha256:c623daf895daf524f81a50dc46f76a9feb30737758d9f6b954b7863339ade10b"
+    docker: "jishar7/celldega_landscape_files@sha256:d246aabee465f628cec4396b2521d45b23d0b9017e7498ffc5bb4f174236ce6c"
     memory: "200 GB"
     disks: "local-disk 200 HDD"
     preemptible: 0
