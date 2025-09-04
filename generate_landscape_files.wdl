@@ -47,7 +47,7 @@ dega.pre.main(
 )
 PY
 
-  gcloud storage rsync -r "/cromwell_root/landscape_files_temp/" "~{bucket_path_landscape_files}/landscape_files/~{sample}/"
+  gcloud storage rsync -r "/cromwell_root/landscape_files_temp/" "~{bucket_path_landscape_files}/~{sample}/"
 >>>
 
   runtime {
