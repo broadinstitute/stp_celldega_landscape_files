@@ -35,20 +35,20 @@ task generate_landscape_files {
 
     echo "Running celldega..."
     python3 <<EOF
-    import celldega as dega
+import celldega as dega
 
-    dega.pre.main(
-        sample="${sample}",
-        data_root_dir="data_input",
-        tile_size=${tile_size},
-        path_landscape_files="${path_landscape_files}",
-        use_int_index=True,
-    )
-    EOF
+dega.pre.main(
+    sample="${sample}",
+    data_root_dir="data_input",
+    tile_size=${tile_size},
+    path_landscape_files="${path_landscape_files}",
+    use_int_index=True,
+)
+EOF
   >>>
 
   output {
-    Array[File] landscape_files = glob("${path_landscape_files}/**")
+    Array[File] landscape_files = glob("~{path_landscape_files}/**")
   }
 
   runtime {
