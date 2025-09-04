@@ -5,7 +5,7 @@ workflow LandscapeFiles {
   input {
     String sample
     String data_dir
-    String path_landscape_files
+    String landscape_files_dir_name
     Int tile_size = 250
   }
 
@@ -13,7 +13,7 @@ workflow LandscapeFiles {
     input:
       sample = sample,
       data_dir = data_dir,
-      path_landscape_files = path_landscape_files,
+      landscape_files_dir_name = landscape_files_dir_name,
       tile_size = tile_size
   }
 }
@@ -23,7 +23,7 @@ task generate_landscape_files {
   input {
     String sample
     String data_dir
-    String path_landscape_files
+    String landscape_files_dir_name
     Int tile_size
   }
 
@@ -42,14 +42,17 @@ dega.pre.main(
     sample="~{sample}",
     data_root_dir="/cromwell_root",
     tile_size=~{tile_size},
-    path_landscape_files="/cromwell_root/~{path_landscape_files}",
+    path_landscape_files="/cromwell_root/~{landscape_files_dir_name}",
     use_int_index=True,
 )
 PY
-  >>>
+
+  echo "Zipping the entire landscape output directory..."
+  tar -czf landscape_files.tar.gz -C "/cromwell_root" "~{landscape_files_dir_name}"
+>>>
 
   output {
-    Array[File] landscape_files = glob(path_landscape_files + "/**")
+    File landscape_archive = "landscape_files.tar.gz"
   }
 
   runtime {
