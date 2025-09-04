@@ -32,7 +32,7 @@ task generate_landscape_files {
     set -euo pipefail
 
     echo "Copying input data from GCS..."
-    gcloud storage rsync -r "~{data_dir}/~{sample}/" "/cromwell_root/~{sample}/"
+    gcloud storage rsync -m -r "~{data_dir}/~{sample}/" "/cromwell_root/~{sample}/"
 
     echo "Running celldega..."
     python3 <<'PY'
@@ -47,7 +47,7 @@ dega.pre.main(
 )
 PY
 
-    gcloud storage rsync -r "/cromwell_root/landscape_files_temp/" "~{bucket_path_landscape_files}/~{sample}/"
+  gcloud storage rsync -m -r "/cromwell_root/landscape_files_temp/" "~{bucket_path_landscape_files}/landscape_files/~{sample}/"
 >>>
 
   runtime {
