@@ -39,10 +39,10 @@ task generate_landscape_files {
 import celldega as dega
 
 dega.pre.main(
-    sample=~{sample},
+    sample="~{sample}",
     data_root_dir="/cromwell_root",
     tile_size=~{tile_size},
-    path_landscape_files=~{path_landscape_files},
+    path_landscape_files="/cromwell_root/~{path_landscape_files}",
     use_int_index=True,
 )
 PY
