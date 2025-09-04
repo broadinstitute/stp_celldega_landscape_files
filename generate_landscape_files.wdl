@@ -48,11 +48,11 @@ dega.pre.main(
 PY
 
   echo "Zipping the entire landscape output directory..."
-  tar -czf landscape_files.tar.gz -C "/cromwell_root" "~{landscape_files_dir_name}"
+  tar -czf "~{landscape_files_dir_name}.tar.gz" -C "/cromwell_root" "~{landscape_files_dir_name}"
 >>>
 
   output {
-    File landscape_archive = "landscape_files.tar.gz"
+    File landscape_archive = "~{landscape_files_dir_name}.tar.gz"
   }
 
   runtime {
