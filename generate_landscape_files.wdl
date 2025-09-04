@@ -40,7 +40,7 @@ import celldega as dega
 
 dega.pre.main(
     sample=~{sample},
-    data_root_dir="data",
+    data_root_dir="/cromwell_root",
     tile_size=~{tile_size},
     path_landscape_files=~{path_landscape_files},
     use_int_index=True,
