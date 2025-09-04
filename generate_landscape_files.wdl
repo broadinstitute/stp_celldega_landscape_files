@@ -32,7 +32,7 @@ task generate_landscape_files {
     set -euo pipefail
 
     echo "Copying input data from GCS..."
-    gcloud storage cp -r "~{data_dir}/~{sample}" "./data"
+    gcloud storage cp -r "~{data_dir}/~{sample}" "/cromwell_root/"
 
     echo "Running celldega..."
     python3 <<'PY'
