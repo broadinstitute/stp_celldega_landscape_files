@@ -24,6 +24,8 @@ RUN set -eux; \
         libvips-tools \
         libvips-dev \
         pkg-config; \
+    \
+    # Google Cloud SDK (gsutil)
     install -d -m 0755 /etc/apt/keyrings; \
     curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
       | gpg --dearmor -o /etc/apt/keyrings/google-cloud-sdk.gpg; \
@@ -31,9 +33,16 @@ RUN set -eux; \
       > /etc/apt/sources.list.d/google-cloud-sdk.list; \
     apt-get update; \
     apt-get -o Acquire::Retries=3 install -y --no-install-recommends google-cloud-sdk; \
+    \
+    # AWS CLI v2
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/tmp/awscliv2.zip"; \
+    unzip /tmp/awscliv2.zip -d /tmp; \
+    /tmp/aws/install; \
+    rm -rf /tmp/aws /tmp/awscliv2.zip; \
+    \
     rm -rf /var/lib/apt/lists/*
 
-RUN gcloud --version && gcloud info && gcloud config list && gsutil version -l
+RUN gcloud --version && gcloud info && gcloud config list && gsutil version -l && aws --version
 
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir pyvips celldega
