@@ -11,6 +11,7 @@ task generate_landscape_files {
     Int bin_size
     Int jitter
     Float image_scale
+    String celldega_docker_image
   }
 
   command <<<
@@ -43,18 +44,17 @@ task generate_landscape_files {
     export DATA_ROOT OUTDIR
 
     echo "Running celldega..."
-    python3 <<'PY'
-import os
-import celldega as dega
 
-dega.pre.main(
-    sample="~{sample}",
-    data_root_dir=os.environ["DATA_ROOT"],
-    tile_size=~{tile_size},
-    path_landscape_files=os.environ["OUTDIR"],
-    use_int_index=True,
-)
-PY
+    python3 /opt/Visium_HD_Landscape_Pre_process.py \
+        --data_dir "${DATA_ROOT}" \
+        --sample "~{sample}" \
+        --image_file_name "~{image_file_name}" \
+        --path_landscape_files "${OUTDIR}" \
+        --use_dummy_clusters ~{if use_dummy_clusters then 1 else 0} \
+        --tile_size ~{tile_size} \
+        --bin_size ~{bin_size} \
+        --jitter ~{jitter} \
+        --image_scale ~{image_scale}
 
     echo "Syncing outputs back to bucket..."
 
@@ -75,7 +75,7 @@ PY
   >>>
 
   runtime {
-    docker: "jishar7/celldega_landscape_files@sha256:202fb1eaab2ea0a97a00ac40269d51503d52f105c0f0aa737ccd9e0be4093f21"
+    docker: celldega_docker_image
     memory: "200 GB"
     disks: "local-disk 200 HDD"
     preemptible: 0

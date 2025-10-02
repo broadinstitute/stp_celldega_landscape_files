@@ -8,14 +8,14 @@ workflow LandscapeFiles {
     String sample
     String data_dir
     String bucket_path_landscape_files
-    Int tile_size = 250
+    Int tile_size = 500
     String technology
-    String? image_file_name
-    use_dummy_clusters = False
-    bin_size = 2
-    jitter = 1
-    image_scale = 1.0
-
+    String image_file_name = None
+    Boolean use_dummy_clusters = false
+    Int bin_size = 2
+    Int jitter = 2
+    Float image_scale = 1.0
+    String celldega_docker_image = "jishar7/celldega_landscape_files@sha256:acb6dbe334496c4d1c5d3ed7455c127271fe6cfe60c834642601b889219e3b4f"
   }
 
   if (technology == "Xenium" || technology == "MERSCOPE") {

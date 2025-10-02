@@ -7,6 +7,7 @@ task generate_landscape_files {
     String data_dir
     String bucket_path_landscape_files
     Int tile_size = 250
+    String celldega_docker_image
   }
 
   command <<<
@@ -71,7 +72,7 @@ PY
   >>>
 
   runtime {
-    docker: "jishar7/celldega_landscape_files@sha256:202fb1eaab2ea0a97a00ac40269d51503d52f105c0f0aa737ccd9e0be4093f21"
+    docker: celldega_docker_image
     memory: "200 GB"
     disks: "local-disk 200 HDD"
     preemptible: 0
