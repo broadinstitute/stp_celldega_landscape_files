@@ -24,7 +24,8 @@ workflow LandscapeFiles {
         sample = sample,
         data_dir = data_dir,
         bucket_path_landscape_files = bucket_path_landscape_files,
-        tile_size = tile_size
+        tile_size = tile_size,
+        celldega_docker_image = celldega_docker_image
     }
   }
 
@@ -39,7 +40,8 @@ workflow LandscapeFiles {
         use_dummy_clusters = use_dummy_clusters,
         bin_size = bin_size,
         jitter = jitter,
-        image_scale = image_scale
+        image_scale = image_scale,
+        celldega_docker_image = celldega_docker_image
     }
   }
 }
