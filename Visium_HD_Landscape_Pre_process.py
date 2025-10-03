@@ -74,6 +74,8 @@ def main(
         df = df.rename_axis("__index_level_0__", axis="columns")
         return df
 
+    print(dega.__version__)
+
     path_landscape_files = f"{path_landscape_files}/{sample}_{bin_size}um"
 
     image_tile_layer = "h&e"
@@ -269,8 +271,7 @@ def main(
 
     # Cell-by-gene (CBG)
     cbg_df = dega.pre.read_cbg_mtx(
-        f"{data_dir}/{sample}/segmented_outputs/filtered_feature_cell_matrix",
-        technology="Visium-HD",
+        f"{data_dir}/{sample}/segmented_outputs/filtered_feature_cell_matrix"
     )
     cbg_df.index = (
         cbg_df.index.str.extract(r"cellid_0*(\d+)-")[0]
@@ -344,7 +345,6 @@ def main(
 
     sbg = dega.pre.read_cbg_mtx(
         f"{data_dir}/{sample}/binned_outputs/square_00{bin_size}um/filtered_feature_bc_matrix",
-        technology="Visium-HD",
     )
     sbg = make_column_names_unique_fast(sbg)
 
