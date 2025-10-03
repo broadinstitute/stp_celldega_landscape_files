@@ -270,8 +270,6 @@ def main(
     # Cell-by-gene (CBG)
     cbg_df = dega.pre.read_cbg_mtx(
         f"{data_dir}/{sample}/segmented_outputs/filtered_feature_cell_matrix",
-        barcodes_name="barcodes",
-        features_name="features",
         technology="Visium-HD",
     )
     cbg_df.index = (
@@ -347,7 +345,6 @@ def main(
     sbg = dega.pre.read_cbg_mtx(
         f"{data_dir}/{sample}/binned_outputs/square_00{bin_size}um/filtered_feature_bc_matrix",
         technology="Visium-HD",
-        barcodes_name="barcodes",
     )
     sbg = make_column_names_unique_fast(sbg)
 
