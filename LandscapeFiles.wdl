@@ -10,7 +10,7 @@ workflow LandscapeFiles {
     String bucket_path_landscape_files
     Int tile_size = 500
     String technology
-    String image_file_name = None
+    String? image_file_name        # optional, no default
     Boolean use_dummy_clusters = false
     Int bin_size = 2
     Int jitter = 2
@@ -19,7 +19,7 @@ workflow LandscapeFiles {
   }
 
   if (technology == "Xenium" || technology == "MERSCOPE") {
-    call ist.generate_landscape_files {
+    call ist.generate_landscape_files as ist_run {
       input:
         sample = sample,
         data_dir = data_dir,
@@ -30,7 +30,7 @@ workflow LandscapeFiles {
   }
 
   if (technology == "Visium-HD") {
-    call visium_hd.generate_landscape_files {
+    call visium_hd.generate_landscape_files as visium_run {
       input:
         sample = sample,
         data_dir = data_dir,
