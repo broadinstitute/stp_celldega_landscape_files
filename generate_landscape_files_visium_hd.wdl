@@ -30,25 +30,27 @@ task generate_landscape_files {
       echo "Detected AWS S3 path, using aws s3 sync..."
 
       aws s3 sync "~{data_dir}/~{sample}/" "${IN_DIR}/" --no-progress --exclude "._*" --exclude ".DS_Store"
+      aws s3 cp "~{image_file_name}" "${IN_DIR}/" --no-progress
 
     elif [[ "~{data_dir}" == gs://* ]]; then
       echo "Detected Google Cloud Storage path, using gcloud storage rsync..."
 
       gcloud storage rsync -r "~{data_dir}/~{sample}/" "${IN_DIR}/"
+      gcloud storage cp "~{image_file_name}" "${IN_DIR}/"
 
     else
       echo "ERROR: data_dir must start with s3:// or gs://"
       exit 1
     fi
 
-    export DATA_ROOT OUTDIR
+    image_filename=$(basename ~{image_file_name})
 
     echo "Running celldega..."
 
     python3 /opt/Visium_HD_Landscape_Pre_process.py \
         --data_dir "${DATA_ROOT}" \
         --sample "~{sample}" \
-        --image_file_name "~{image_file_name}" \
+        --image_file_name "${image_filename}" \
         --path_landscape_files "${OUTDIR}" \
         --use_dummy_clusters ~{if use_dummy_clusters then 1 else 0} \
         --tile_size ~{tile_size} \
