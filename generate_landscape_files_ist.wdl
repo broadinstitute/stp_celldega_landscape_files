@@ -25,7 +25,7 @@ task generate_landscape_files {
     if [[ "~{data_dir}" == s3://* ]]; then
       echo "Detected AWS S3 path, using aws s3 sync..."
 
-      aws s3 sync "~{data_dir}/~{sample}/" "${IN_DIR}/" --no-progress --exclude "._*" --exclude ".DS_Store"
+      aws s3 sync "~{data_dir}/~{sample}/" "${IN_DIR}/" --exclude "._*" --exclude ".DS_Store"
       echo "${IN_DIR}"
       echo "${OUTDIR}"
 
