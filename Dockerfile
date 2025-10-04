@@ -55,7 +55,7 @@ RUN gcloud --version && gcloud info && gcloud config list && gsutil version -l &
 # Python deps
 RUN pip install --upgrade pip && \
     # install celldega prerelease specifically
-    pip install --no-cache-dir --pre celldega && \
+    pip install --upgrade --no-cache-dir celldega && \
     # install rest as stable
     pip install --no-cache-dir \
       pyvips \

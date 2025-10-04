@@ -26,6 +26,8 @@ task generate_landscape_files {
       echo "Detected AWS S3 path, using aws s3 sync..."
 
       aws s3 sync "~{data_dir}/~{sample}/" "${IN_DIR}/" --no-progress --exclude "._*" --exclude ".DS_Store"
+      echo "${IN_DIR}"
+      echo "${OUTDIR}"
 
     elif [[ "~{data_dir}" == gs://* ]]; then
       echo "Detected Google Cloud Storage path, using gcloud storage rsync..."
