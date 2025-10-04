@@ -8,8 +8,8 @@ task generate_landscape_files {
     String bucket_path_landscape_files
     Int tile_size = 250
     String celldega_docker_image
-    String cleaned_data_dir = sub(sub("~{data_dir}/~{sample}", "//+", "/"), "/+$", "/")
-    String cleaned_bucket_path_landscape_files = sub(sub("~{bucket_path_landscape_files}", "//+", "/"), "/+$", "")
+    String cleaned_data_dir = sub(sub("~{data_dir}/~{sample}", "(?<!^)//+", "/"), "/+$", "/")
+    String cleaned_bucket_path_landscape_files = sub(sub("~{bucket_path_landscape_files}", "(?<!^)//+", "/"), "/+$", "")
   }
 
   command <<<
