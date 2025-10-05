@@ -70,9 +70,9 @@ task generate_landscape_files {
     echo "Syncing outputs back to bucket..."
 
     if [[ "${USER_OUTPUT_DIR}" == s3://* ]]; then
-      aws s3 sync "${OUTDIR}/" "${USER_OUTPUT_DIR%/}/${SAMPLE}/" --no-progress
+      aws s3 sync "${OUTDIR}/" "${USER_OUTPUT_DIR%/}/" --no-progress
     elif [[ "${USER_OUTPUT_DIR}" == gs://* ]]; then
-      gcloud storage rsync -r "${OUTDIR}/" "${USER_OUTPUT_DIR%/}/${SAMPLE}/"
+      gcloud storage rsync -r "${OUTDIR}/" "${USER_OUTPUT_DIR%/}/"
     else
       echo "ERROR: bucket_path_landscape_files must start with s3:// or gs://"
       exit 1
