@@ -40,7 +40,7 @@ task generate_landscape_files {
     elif [[ "${USER_DATA_DIR}" == gs://* ]]; then
       echo "Detected Google Cloud Storage path, using gcloud storage rsync..."
       gcloud storage rsync -r "${USER_DATA_DIR%/}/${SAMPLE}" "${IN_DIR}/"
-      gcloud storage cp "~{image_file_name}" "${IN_DIR}/"
+      gcloud storage cp "~{image_file_path}" "${IN_DIR}/"
 
     else
       echo "ERROR: data_dir must start with s3:// or gs://"
@@ -52,7 +52,7 @@ task generate_landscape_files {
       exit 2
     fi
 
-    image_filename=$(basename ~{image_file_name})
+    image_filename=$(basename ~{image_file_path})
 
     echo "Running celldega..."
 
