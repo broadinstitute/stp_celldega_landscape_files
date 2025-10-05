@@ -112,6 +112,13 @@ def main(
         "y_max": image_data.shape[0],
     }
 
+    # Cell-by-gene (CBG)
+    cbg_df = dega.pre.read_cbg_mtx(
+        f"{data_dir}/{sample}/segmented_outputs/filtered_feature_cell_matrix"
+    )
+    cbg_df.columns = cbg_df.columns.str.replace("/", "_", regex=False)
+    cbg_df = make_column_names_unique_fast(cbg_df)
+
     # Process Cells
     features = []
     with fiona.open(
@@ -131,7 +138,7 @@ def main(
     cells["geometry_point"] = cells.apply(
         lambda row: Point(row["centroid_x"], row["centroid_y"]), axis=1
     )
-    cells["cell_id"] = cells["cell_id"].astype(str).map(lambda x: f"c-{x}")
+    cells['cell_id'] = cells['cell_id'].apply(lambda x: f"cellid_{x:09d}-1")
 
     cell_metadata = gpd.GeoDataFrame(
         cells[["cell_id", "geometry_point"]],
@@ -166,12 +173,8 @@ def main(
             f"{data_dir}/{sample}/segmented_outputs/analysis/clustering/"
             f"gene_expression_graphclust/clusters.csv"
         )
-        def_clusters.index = (
-            def_clusters["Barcode"].str.extract(r"cellid_0*(\d+)-")[0]
-            .astype(int)
-            .astype(str)
-            .map(lambda x: f"c-{x}")
-        )
+        def_clusters.index = def_clusters['Barcode']
+
         def_clusters.drop("Barcode", axis=1, inplace=True)
         def_clusters.rename(columns={"Cluster": "cluster"}, inplace=True)
         def_clusters["cluster"] = def_clusters["cluster"].astype(str)
@@ -268,19 +271,6 @@ def main(
     meta_gene["non-zero"] = pd.Series(0.5, index=list_genes)
     meta_gene["color"] = ser_color
     meta_gene.to_parquet(path_landscape_files + "/meta_gene.parquet")
-
-    # Cell-by-gene (CBG)
-    cbg_df = dega.pre.read_cbg_mtx(
-        f"{data_dir}/{sample}/segmented_outputs/filtered_feature_cell_matrix"
-    )
-    cbg_df.index = (
-        cbg_df.index.str.extract(r"cellid_0*(\d+)-")[0]
-        .astype(int)
-        .astype(str)
-        .map(lambda x: f"c-{x}")
-    )
-    cbg_df.columns = cbg_df.columns.str.replace("/", "_", regex=False)
-    cbg_df = make_column_names_unique_fast(cbg_df)
 
     list_ser = []
     clusters = def_clusters["cluster"].unique().tolist()

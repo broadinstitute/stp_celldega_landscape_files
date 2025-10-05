@@ -6,7 +6,7 @@ task generate_landscape_files {
     String data_dir
     String bucket_path_landscape_files
     Int tile_size
-    String image_file_name
+    String image_file_path
     Boolean use_dummy_clusters
     Int bin_size
     Int jitter
@@ -17,30 +17,39 @@ task generate_landscape_files {
   command <<<
     #!/bin/bash
     set -euo pipefail
+    IFS=$'\n\t'
 
-    echo "Checking data_dir source: ~{data_dir}"
+    SAMPLE="~{sample}"
+    USER_DATA_DIR="~{data_dir}"
+    USER_OUTPUT_DIR="~{bucket_path_landscape_files}"
 
     DATA_ROOT="${PWD}"
     OUTDIR="${DATA_ROOT}/landscape_files_temp"
-    IN_DIR="${DATA_ROOT}/~{sample}"
+    IN_DIR="${DATA_ROOT}/${SAMPLE}"
 
     mkdir -p "${IN_DIR}" "${OUTDIR}"
 
-    if [[ "~{data_dir}" == s3://* ]]; then
+    echo "Checking data_dir source: ${USER_DATA_DIR}"
+
+    if [[ "${USER_DATA_DIR}" == s3://* ]]; then
       echo "Detected AWS S3 path, using aws s3 sync..."
 
-      aws s3 sync "~{data_dir}/~{sample}/" "${IN_DIR}/" --no-progress --exclude "._*" --exclude ".DS_Store"
-      aws s3 cp "~{image_file_name}" "${IN_DIR}/" --no-progress
+      aws s3 sync "${USER_DATA_DIR%/}/${SAMPLE}" "${IN_DIR}/" --exclude "._*" --exclude ".DS_Store"
+      aws s3 cp "~{image_file_path}" "${IN_DIR}/" --no-progress
 
-    elif [[ "~{data_dir}" == gs://* ]]; then
+    elif [[ "${USER_DATA_DIR}" == gs://* ]]; then
       echo "Detected Google Cloud Storage path, using gcloud storage rsync..."
-
-      gcloud storage rsync -r "~{data_dir}/~{sample}/" "${IN_DIR}/"
+      gcloud storage rsync -r "${USER_DATA_DIR%/}/${SAMPLE}" "${IN_DIR}/"
       gcloud storage cp "~{image_file_name}" "${IN_DIR}/"
 
     else
       echo "ERROR: data_dir must start with s3:// or gs://"
       exit 1
+    fi
+
+    if [[ -z "$(find "${IN_DIR}" -type f -print -quit)" ]]; then
+      echo "ERROR: No files found under ${USER_DATA_DIR}/${SAMPLE}." >&2
+      exit 2
     fi
 
     image_filename=$(basename ~{image_file_name})
@@ -60,14 +69,10 @@ task generate_landscape_files {
 
     echo "Syncing outputs back to bucket..."
 
-    if [[ "~{bucket_path_landscape_files}" == s3://* ]]; then
-      echo "Detected AWS S3 output bucket, using aws s3 sync..."
-      aws s3 sync "${OUTDIR}/" "~{bucket_path_landscape_files}/~{sample}/" --no-progress
-
-    elif [[ "~{bucket_path_landscape_files}" == gs://* ]]; then
-      echo "Detected GCS output bucket, using gcloud storage rsync..."
-      gcloud storage rsync -r "${OUTDIR}/" "~{bucket_path_landscape_files}/~{sample}/"
-
+    if [[ "${USER_OUTPUT_DIR}" == s3://* ]]; then
+      aws s3 sync "${OUTDIR}/" "${USER_OUTPUT_DIR%/}/${SAMPLE}/" --no-progress
+    elif [[ "${USER_OUTPUT_DIR}" == gs://* ]]; then
+      gcloud storage rsync -r "${OUTDIR}/" "${USER_OUTPUT_DIR%/}/${SAMPLE}/"
     else
       echo "ERROR: bucket_path_landscape_files must start with s3:// or gs://"
       exit 1
