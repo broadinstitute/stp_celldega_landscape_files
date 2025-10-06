@@ -23,7 +23,14 @@ RUN set -eux; \
         libvips \
         libvips-tools \
         libvips-dev \
-        pkg-config; \
+        pkg-config \
+        # geospatial deps
+        gdal-bin \
+        libgdal-dev \
+        libgeos-dev \
+        libspatialindex-dev \
+        proj-bin \
+        libproj-dev; \
     \
     # Google Cloud SDK (gsutil)
     install -d -m 0755 /etc/apt/keyrings; \
@@ -42,10 +49,32 @@ RUN set -eux; \
     \
     rm -rf /var/lib/apt/lists/*
 
+# sanity check
 RUN gcloud --version && gcloud info && gcloud config list && gsutil version -l && aws --version
 
+# Python deps
 RUN pip install --upgrade pip && \
-    pip install --no-cache-dir pyvips celldega
+    # install celldega prerelease specifically
+    pip install --upgrade --no-cache-dir celldega && \
+    # install rest as stable
+    pip install --no-cache-dir \
+      pyvips \
+      fiona \
+      geopandas \
+      matplotlib \
+      numpy \
+      pandas \
+      polars \
+      scanpy \
+      tifffile \
+      scipy \
+      shapely
 
-WORKDIR /usr/src/app
-CMD ["/bin/bash"]
+# Copy Python scripts into /opt
+COPY Visium_HD_Landscape_Pre_process.py /opt/Visium_HD_Landscape_Pre_process.py
+
+# Make specific scripts executable
+RUN chmod +x /opt/Visium_HD_Landscape_Pre_process.py
+
+ENTRYPOINT ["/bin/bash"]
+CMD ["-c", "echo \"This is a test.\" | wc -"]
