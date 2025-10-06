@@ -61,7 +61,7 @@ task generate_landscape_files {
         --sample "~{sample}" \
         --image_file_name "${image_filename}" \
         --path_landscape_files "${OUTDIR}" \
-        --use_dummy_clusters ~{if use_dummy_clusters then 1 else 0} \
+       ~{if use_dummy_clusters then "--use_dummy_clusters" else ""} \
         --tile_size ~{tile_size} \
         --bin_size ~{bin_size} \
         --jitter ~{jitter} \

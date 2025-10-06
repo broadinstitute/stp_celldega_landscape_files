@@ -159,6 +159,7 @@ def main(
 
     # Dummy clusters
     if use_dummy_clusters:
+        print("Creating dummy clusters...")
         def_clusters = pd.DataFrame(index=cells.index.tolist())
         def_clusters["cluster"] = pd.Series(0, index=cells.index.tolist())
         def_clusters.to_parquet(path_landscape_files + "/cell_clusters/cluster.parquet")
@@ -169,6 +170,7 @@ def main(
         meta_cluster.to_parquet(cell_clusters_dir / "meta_cluster.parquet")
 
     else:
+        print("Using default clusters...")
         def_clusters = pd.read_csv(
             f"{data_dir}/{sample}/segmented_outputs/analysis/clustering/"
             f"gene_expression_graphclust/clusters.csv"
@@ -432,7 +434,7 @@ if __name__ == "__main__":
     parser.add_argument("--sample", type=str)
     parser.add_argument("--image_file_name", type=str)
     parser.add_argument("--path_landscape_files", type=str)
-    parser.add_argument("--use_dummy_clusters", type=bool)
+    parser.add_argument("--use_dummy_clusters", action="store_true")
     parser.add_argument("--tile_size", type=int)
     parser.add_argument("--bin_size", type=int)
     parser.add_argument("--jitter", type=int)
