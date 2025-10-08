@@ -78,7 +78,7 @@ def main(
 
     # Image
     img_file_path = (
-        f"{data_dir}/results/{sample}/{sample}.ome.tiff"
+        f"{data_dir}/{sample}/{sample}.ome.tiff"
     )
 
     with tifffile.TiffFile(img_file_path) as tif:
@@ -92,13 +92,13 @@ def main(
     dega.pre.make_deepzoom_pyramid(
         image_png,
         path_landscape_files + "/pyramid_images/",
-        "image_tile_layer",
+        image_tile_layer,
         suffix=suffix,
     )
 
     # Cells
     cells = pd.read_csv(
-        f"{data_dir}/intermediate_results/02_matrix/"
+        f"{data_dir}/"
         f"{sample}/{sample}_cell_binned/barcodes.tsv.gz",
         sep="\t",
         header=None,
@@ -106,7 +106,7 @@ def main(
     )
 
     gc = pd.read_csv(
-        f"{data_dir}/intermediate_results/stats/sample_prep_stats_sample.csv",
+        f"{data_dir}/{sample}/sample_prep_stats_sample.csv",
         index_col=0,
     )
 
@@ -127,7 +127,7 @@ def main(
     tmp["name"] = pd.Series(tmp.index.tolist(), index=tmp.index.tolist())
 
     tmp[["name", "geometry"]].to_parquet(
-        path_landscape_files + "cell_metadata.parquet"
+        path_landscape_files + "/cell_metadata.parquet"
     )
 
     clusters = pd.DataFrame(index=tmp.index.tolist())
@@ -141,7 +141,7 @@ def main(
     tile_bounds = {"x_min": 0, "x_max": 55000, "y_min": 0, "y_max": 55000}
 
     poly = pd.read_csv(
-        f"{data_dir}/results/{sample}/"
+        f"{data_dir}/{sample}/"
         f"{sample}_Expanded_5um_cell_contour_coords.csv"
     )
 
@@ -203,7 +203,7 @@ def main(
 
     # Meta Gene
     adata_cell = sc.read_10x_mtx(
-        f"{data_dir}/intermediate_results/02_matrix/"
+        f"{data_dir}/"
         f"{sample}/{sample}_cell_binned/"
     )
 
@@ -261,7 +261,7 @@ def main(
 
     # Cell-by-gene (CBG)
     path_cbg = (
-        f"{data_dir}/intermediate_results/02_matrix/"
+        f"{data_dir}/"
         f"{sample}/{sample}_cell_binned/"
     )
     cbg = dega.pre.read_cbg_mtx(path_cbg, technology="IST")
@@ -273,7 +273,7 @@ def main(
 
     # Jittered transcripts
     sbg = dega.pre.landscape.read_cbg_mtx(
-        f"{data_dir}/intermediate_results/02_matrix/"
+        f"{data_dir}/"
         f"{sample}/{sample}_raw",
         technology="IST",
         barcodes_name="coords",
