@@ -17,7 +17,7 @@ workflow LandscapeFiles {
     Int jitter = 2
     Float image_scale = 1.0
     Float scaling_factor = 0.171
-    String celldega_docker_image = "jishar7/celldega_landscape_files@sha256:0a8febd6fd2672c3988cc593061d3278dd3c6005127e5cb221b531fd02d0c9d2"
+    String celldega_docker_image = "jishar7/celldega_landscape_files@sha256:955f593d40aa3dad8531cc5547881355fbf425a6addd9539709a741a6fd0b9b0"
   }
 
   if (technology == "Xenium" || technology == "MERSCOPE") {
