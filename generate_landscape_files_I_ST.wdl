@@ -1,12 +1,14 @@
 version 1.0
-
 task generate_landscape_files {
 
   input {
     String sample
     String data_dir
     String bucket_path_landscape_files
+    Float scaling_factor
     Int tile_size
+    Float image_scale
+    Int jitter
     String celldega_docker_image
   }
 
@@ -29,11 +31,19 @@ task generate_landscape_files {
 
     if [[ "${USER_DATA_DIR}" == s3://* ]]; then
       echo "Detected AWS S3 path, using aws s3 sync..."
-      aws s3 sync "${USER_DATA_DIR%/}/${SAMPLE}" "${IN_DIR}/" --exclude "._*" --exclude ".DS_Store"
+
+      aws s3 cp "${USER_DATA_DIR%/}/results/${SAMPLE}/${SAMPLE}.ome.tiff" "${IN_DIR}/"
+      aws s3 sync "${USER_DATA_DIR%/}/intermediate_results/02_matrix/${SAMPLE}" "${IN_DIR}/"
+      aws s3 cp "${USER_DATA_DIR%/}/intermediate_results/stats/sample_prep_stats_sample.csv" "${IN_DIR}/"
+      aws s3 cp "${USER_DATA_DIR%/}/results/${SAMPLE}/${SAMPLE}_Expanded_5um_cell_contour_coords.csv" "${IN_DIR}/"
 
     elif [[ "${USER_DATA_DIR}" == gs://* ]]; then
       echo "Detected Google Cloud Storage path, using gcloud storage rsync..."
-      gcloud storage rsync -r "${USER_DATA_DIR%/}/${SAMPLE}" "${IN_DIR}/"
+
+      gcloud storage cp "${USER_DATA_DIR%/}/results/${SAMPLE}/${SAMPLE}.ome.tiff" "${IN_DIR}/"
+      gcloud storage rsync -r "${USER_DATA_DIR%/}/intermediate_results/02_matrix/${SAMPLE}" "${IN_DIR}/"
+      gcloud storage cp "${USER_DATA_DIR%/}/intermediate_results/stats/sample_prep_stats_sample.csv" "${IN_DIR}/"
+      gcloud storage cp "${USER_DATA_DIR%/}/results/${SAMPLE}/${SAMPLE}_Expanded_5um_cell_contour_coords.csv" "${IN_DIR}/"
 
     else
       echo "ERROR: data_dir must start with s3:// or gs://"
@@ -45,27 +55,23 @@ task generate_landscape_files {
       exit 2
     fi
 
-    export SAMPLE DATA_ROOT OUTDIR
-
     echo "Running celldega..."
-    python3 <<'PY'
-import os
-import celldega as dega
-dega.pre.main(
-    sample=os.environ["SAMPLE"],
-    data_root_dir=os.environ["DATA_ROOT"],
-    tile_size=~{tile_size},
-    path_landscape_files=os.environ["OUTDIR"],
-    use_int_index=True,
-)
-PY
+
+    python3 /opt/IST_Landscape_Pre-process.py \
+        --data_dir "${DATA_ROOT}" \
+        --sample "~{sample}" \
+        --path_landscape_files "${OUTDIR}" \
+        --scaling_factor ~{scaling_factor} \
+        --tile_size ~{tile_size} \
+        --image_scale ~{image_scale} \
+        --jitter ~{jitter}
 
     echo "Syncing outputs back to bucket..."
 
     if [[ "${USER_OUTPUT_DIR}" == s3://* ]]; then
-      aws s3 sync "${OUTDIR}/" "${USER_OUTPUT_DIR%/}/${SAMPLE}/" --no-progress
+      aws s3 sync "${OUTDIR}/" "${USER_OUTPUT_DIR%/}/" --no-progress
     elif [[ "${USER_OUTPUT_DIR}" == gs://* ]]; then
-      gcloud storage rsync -r "${OUTDIR}/" "${USER_OUTPUT_DIR%/}/${SAMPLE}/"
+      gcloud storage rsync -r "${OUTDIR}/" "${USER_OUTPUT_DIR%/}/"
     else
       echo "ERROR: bucket_path_landscape_files must start with s3:// or gs://"
       exit 1
@@ -79,5 +85,6 @@ PY
     memory: "200 GB"
     disks: "local-disk 200 HDD"
     preemptible: 0
+    continueOnReturnCode: 0
   }
 }

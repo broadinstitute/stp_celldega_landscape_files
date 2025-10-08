@@ -1,0 +1,393 @@
+import argparse
+import json
+import os
+from collections import defaultdict
+from pathlib import Path
+
+import celldega as dega
+import geopandas as gpd
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import polars as pl
+import scanpy as sc
+import tifffile
+from matplotlib.colors import to_hex
+from scipy.sparse import coo_matrix
+from shapely.geometry import Polygon
+
+
+def main(
+    data_dir,
+    sample,
+    path_landscape_files,
+    scaling_factor=0.171,
+    tile_size=500,
+    image_scale=1.0,
+    jitter=1,
+):
+    # helper functions
+    def safe_polygon(row):
+        try:
+            return Polygon(zip(row["vertex_x"], row["vertex_y"]))
+        except Exception as _e:
+            # print(f"Error processing row {row.name}: {_e}")
+            return Polygon()
+
+    def simple_format(geometry, image_scale):
+        # factor in scaling
+        return [
+            [[coord[0] / image_scale, coord[1] / image_scale] for coord in polygon]
+            for polygon in geometry
+        ]
+
+    def transform_polygon(polygon):
+        exterior_coords = polygon.exterior.coords
+        original_format_coords = np.array([np.array(coord) for coord in exterior_coords])
+        return np.array([original_format_coords], dtype=object)
+
+    def make_column_names_unique_fast(df):
+        counts = defaultdict(int)
+        used = set()
+        new_cols = []
+
+        for col in df.columns:
+            if col not in used:
+                new_cols.append(col)
+                used.add(col)
+                counts[col] += 1
+            else:
+                while True:
+                    new_name = f"{col}_{counts[col]}"
+                    counts[col] += 1
+                    if new_name not in used:
+                        new_cols.append(new_name)
+                        used.add(new_name)
+                        break
+
+        df.columns = new_cols
+        return df
+
+    image_tile_layer = "h&e"
+    suffix = ".webp[Q=100]"
+
+    high_res_scale = 1 / scaling_factor
+
+    path_landscape_files = path_landscape_files + "/" + sample
+    os.makedirs(path_landscape_files, exist_ok=True)
+
+    # Image
+    img_file_path = (
+        f"{data_dir}/results/{sample}/{sample}.ome.tiff"
+    )
+
+    with tifffile.TiffFile(img_file_path) as tif:
+        series = tif.series[0]
+        image_data = series.asarray()
+
+    tifffile.imwrite(
+        path_landscape_files + "/output_regular.tif", image_data, compression=None
+    )
+    image_png = dega.pre._convert_to_png(path_landscape_files + "/output_regular.tif")
+    dega.pre.make_deepzoom_pyramid(
+        image_png,
+        path_landscape_files + "/pyramid_images/",
+        "image_tile_layer",
+        suffix=suffix,
+    )
+
+    # Cells
+    cells = pd.read_csv(
+        f"{data_dir}/intermediate_results/02_matrix/"
+        f"{sample}/{sample}_cell_binned/barcodes.tsv.gz",
+        sep="\t",
+        header=None,
+        index_col=0,
+    )
+
+    gc = pd.read_csv(
+        f"{data_dir}/intermediate_results/stats/sample_prep_stats_sample.csv",
+        index_col=0,
+    )
+
+    tmp_ini = pd.DataFrame([x.split(":") for x in cells.index.tolist()])
+    tmp_ini.set_index(0, inplace=True)
+    tmp_ini.index.name = None
+    tmp_ini.columns = ["x", "y"]
+    tmp_ini = tmp_ini.astype(float)
+
+    tmp = pd.DataFrame()
+    tmp["x"] = tmp_ini["y"]
+    tmp["y"] = tmp_ini["x"]
+
+    tmp["x"] = (tmp["x"] - gc.loc[sample, "Global_left"]) * high_res_scale
+    tmp["y"] = (tmp["y"] - gc.loc[sample, "Global_top"]) * high_res_scale
+
+    tmp["geometry"] = tmp.apply(lambda row: [row["x"], row["y"]], axis=1)
+    tmp["name"] = pd.Series(tmp.index.tolist(), index=tmp.index.tolist())
+
+    tmp[["name", "geometry"]].to_parquet(
+        path_landscape_files + "cell_metadata.parquet"
+    )
+
+    clusters = pd.DataFrame(index=tmp.index.tolist())
+    clusters["cluster"] = pd.Series(0, index=tmp.index.tolist())
+
+    cell_clusters_dir = path_landscape_files + "/cell_clusters"
+    os.makedirs(cell_clusters_dir, exist_ok=True)
+    clusters.to_parquet(f"{cell_clusters_dir}/cluster.parquet")
+
+    # Segmented Cells
+    tile_bounds = {"x_min": 0, "x_max": 55000, "y_min": 0, "y_max": 55000}
+
+    poly = pd.read_csv(
+        f"{data_dir}/results/{sample}/"
+        f"{sample}_Expanded_5um_cell_contour_coords.csv"
+    )
+
+    poly["vertex_x"] = (poly["vertex_x"] - gc.loc[sample, "Global_left"]) * (
+        high_res_scale
+    )
+    poly["vertex_y"] = (poly["vertex_y"] - gc.loc[sample, "Global_top"]) * (
+        high_res_scale
+    )
+
+    grouped = poly.groupby("cell_id").agg(list)
+    grouped["geometry"] = grouped.apply(safe_polygon, axis=1)
+
+    cells = gpd.GeoDataFrame(grouped, geometry="geometry")[["geometry"]]
+    cells["NEW_GEOMETRY"] = cells["geometry"].apply(lambda poly: transform_polygon(poly))
+    cells["GEOMETRY"] = cells["NEW_GEOMETRY"].apply(
+        lambda x: simple_format(x, image_scale)
+    )
+    cells["polygon"] = cells["GEOMETRY"].apply(lambda x: Polygon(x[0]))
+
+    gdf_cells = gpd.GeoDataFrame(geometry=cells["polygon"])
+    gdf_cells["center_x"] = gdf_cells.centroid.x
+    gdf_cells["center_y"] = gdf_cells.centroid.y
+
+    cell_segmentation_dir = path_landscape_files + "/cell_segmentation"
+    os.makedirs(cell_segmentation_dir, exist_ok=True)
+
+    tile_size_x = tile_size
+    tile_size_y = tile_size
+
+    n_tiles_x = int(np.ceil((tile_bounds["x_max"] - tile_bounds["x_min"]) / tile_size_x))
+    n_tiles_y = int(np.ceil((tile_bounds["y_max"] - tile_bounds["y_min"]) / tile_size_y))
+
+    for i in range(n_tiles_x):
+        if i % 2 == 0:
+            print("row", i)
+
+        for j in range(n_tiles_y):
+            tile_x_min = tile_bounds["x_min"] + i * tile_size_x
+            tile_x_max = tile_x_min + tile_size_x
+            tile_y_min = tile_bounds["y_min"] + j * tile_size_y
+            tile_y_max = tile_y_min + tile_size_y
+
+            keep_cells = gdf_cells[
+                (gdf_cells.center_x >= tile_x_min)
+                & (gdf_cells.center_x < tile_x_max)
+                & (gdf_cells.center_y >= tile_y_min)
+                & (gdf_cells.center_y < tile_y_max)
+            ].index.tolist()
+
+            inst_geo = cells.loc[keep_cells, ["GEOMETRY"]]
+            inst_geo["name"] = pd.Series(
+                inst_geo.index.tolist(), index=inst_geo.index.tolist()
+            )
+
+            filename = f"{cell_segmentation_dir}/cell_tile_{i}_{j}.parquet"
+            if inst_geo.shape[0] > 0:
+                inst_geo[["GEOMETRY", "name"]].to_parquet(filename)
+
+    # Meta Gene
+    adata_cell = sc.read_10x_mtx(
+        f"{data_dir}/intermediate_results/02_matrix/"
+        f"{sample}/{sample}_cell_binned/"
+    )
+
+    list_genes = adata_cell.var.index.tolist()
+    meta_gene = pd.DataFrame(index=list_genes)
+
+    palettes = [plt.get_cmap(name).colors for name in plt.colormaps() if "tab" in name]
+    flat_colors = [color for palette in palettes for color in palette]
+    flat_colors_hex = [to_hex(color) for color in flat_colors]
+
+    colors = [
+        flat_colors_hex[i % len(flat_colors_hex)] if "Blank" not in gene else "#FFFFFF"
+        for i, gene in enumerate(list_genes)
+    ]
+
+    ser_color = pd.Series(colors, index=list_genes)
+
+    meta_gene["mean"] = pd.Series(100, index=list_genes)
+    meta_gene["std"] = pd.Series(10, index=list_genes)
+    meta_gene["max"] = pd.Series(100, index=list_genes)
+    meta_gene["non-zero"] = pd.Series(0.5, index=list_genes)
+    meta_gene["color"] = ser_color
+
+    meta_gene.to_parquet(path_landscape_files + "/meta_gene.parquet")
+
+    # Save Landscape Parameters
+    max_pyramid_zoom = dega.pre.get_max_zoom_level(
+        path_landscape_files + f"/pyramid_images/{image_tile_layer}_files"
+    )
+
+    landscape_parameters = {
+        "technology": "IST",
+        "segmentation_approach": ["default"],
+        "max_pyramid_zoom": max_pyramid_zoom,
+        "tile_size": tile_size,
+        "image_info": [
+            {
+                "name": image_tile_layer,
+                "button_name": image_tile_layer.upper(),
+                "color": [0, 0, 255],
+            }
+        ],
+        "image_format": ".webp",
+        "use_int_index": True,
+    }
+
+    with open(path_landscape_files + "/landscape_parameters.json", "w") as f:
+        json.dump(landscape_parameters, f, indent=2)
+
+    # Meta Cluster
+    meta_cluster = pd.DataFrame()
+    meta_cluster.loc["0", "color"] = "#ff7f0e"
+    meta_cluster.loc["0", "count"] = 1000
+    meta_cluster.to_parquet(cell_clusters_dir + "/meta_cluster.parquet")
+
+    # Cell-by-gene (CBG)
+    path_cbg = (
+        f"{data_dir}/intermediate_results/02_matrix/"
+        f"{sample}/{sample}_cell_binned/"
+    )
+    cbg = dega.pre.read_cbg_mtx(path_cbg, technology="IST")
+    cbg.index = [x.split(":")[0] for x in cbg.index.tolist()]
+    cbg = make_column_names_unique_fast(cbg)
+
+    dega.pre.make_meta_gene(cbg, path_landscape_files + "/meta_gene.parquet")
+    dega.pre.save_cbg_gene_parquets("IST", path_landscape_files, cbg, verbose=True)
+
+    # Jittered transcripts
+    sbg = dega.pre.landscape.read_cbg_mtx(
+        f"{data_dir}/intermediate_results/02_matrix/"
+        f"{sample}/{sample}_raw",
+        technology="IST",
+        barcodes_name="coords",
+    )
+
+    coords = sbg.index.tolist()
+    tmp = [x.split(":") for x in coords]
+    df_tmp = pd.DataFrame(tmp, dtype=float)
+    df_tmp = df_tmp / 1000
+    df_tmp.columns = ["y", "x"]
+
+    df_tmp["x"] = (df_tmp["x"] - gc.loc[sample, "Global_left"]) * high_res_scale
+    df_tmp["y"] = (df_tmp["y"] - gc.loc[sample, "Global_top"]) * high_res_scale
+
+    spots = df_tmp
+    gene_str_to_int = dega.pre.boundary_tile._get_name_mapping(
+        path_landscape_files, layer="transcript"
+    )
+
+    tile_bounds = {"x_min": 0, "x_max": 55000, "y_min": 0, "y_max": 55000}
+    n_tiles_x = int(np.ceil((tile_bounds["x_max"] - tile_bounds["x_min"]) / tile_size))
+    n_tiles_y = int(np.ceil((tile_bounds["y_max"] - tile_bounds["y_min"]) / tile_size))
+
+    sbg.reset_index(inplace=True)
+    spots.index = sbg.index
+    del sbg[0]
+    sbg = make_column_names_unique_fast(sbg)
+
+    rng = np.random.default_rng()
+
+    trx_files_path = path_landscape_files + "/transcript_tiles"
+    os.makedirs(trx_files_path, exist_ok=True)
+
+    for i in range(n_tiles_x):
+        if i % 10 == 0:
+            print("row", i)
+
+        for j in range(n_tiles_y):
+            filename = f"{trx_files_path}/transcripts_tile_{i}_{j}.parquet"
+            if Path(filename).exists():
+                continue
+
+            tile_x_min = tile_bounds["x_min"] + i * tile_size
+            tile_x_max = tile_x_min + tile_size
+            tile_y_min = tile_bounds["y_min"] + j * tile_size
+            tile_y_max = tile_y_min + tile_size
+
+            tile_spots = spots[
+                (spots.x >= tile_x_min)
+                & (spots.x < tile_x_max)
+                & (spots.y >= tile_y_min)
+                & (spots.y < tile_y_max)
+            ]
+
+            if tile_spots.empty:
+                continue
+
+            inst_spots = tile_spots.index.tolist()
+            tile_sbg = sbg.loc[inst_spots]
+            if tile_sbg.sparse.to_coo().nnz == 0:
+                continue
+
+            coo: coo_matrix = tile_sbg.sparse.to_coo().tocoo()
+            row = np.array([inst_spots[r] for r in coo.row])
+            col = tile_sbg.columns.to_numpy()[coo.col]
+            count = coo.data
+
+            df = pd.DataFrame({"spot": row, "gene": col, "count": count})
+            df = df[df["count"] > 0]
+            df = df.loc[df.index.repeat(df["count"].astype(int))].reset_index(drop=True)
+
+            df["x"] = df["spot"].map(tile_spots["x"])
+            df["y"] = df["spot"].map(tile_spots["y"])
+            df["name"] = df["gene"].map(gene_str_to_int).astype("int32")
+
+            pl_df = pl.DataFrame(df[["name", "x", "y"]])
+
+            if rng is None:
+                rng = np.random.default_rng()
+
+            jitter_radius = jitter / 2
+            jitter_x = rng.uniform(-jitter_radius, jitter_radius, size=len(pl_df))
+            jitter_y = rng.uniform(-jitter_radius, jitter_radius, size=len(pl_df))
+
+            pl_df = pl_df.with_columns(
+                [
+                    (pl.col("x") + pl.Series(jitter_x)).round(2).alias("x"),
+                    (pl.col("y") + pl.Series(jitter_y)).round(2).alias("y"),
+                ]
+            )
+
+            df_out = pl_df.to_pandas()
+            df_out["geometry"] = df_out[["x", "y"]].values.tolist()
+            df_out[["name", "geometry"]].to_parquet(filename, index=False)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="IST-Celldega-LandscapeFiles-Preprocess"
+    )
+    parser.add_argument("--data_dir", type=str)
+    parser.add_argument("--sample", type=str)
+    parser.add_argument("--path_landscape_files", type=str)
+    parser.add_argument("--scaling_factor", type=float)
+    parser.add_argument("--tile_size", type=int)
+    parser.add_argument("--image_scale", type=float)
+    parser.add_argument("--jitter", type=int)
+    args = parser.parse_args()
+
+    main(
+        data_dir=args.data_dir,
+        sample=args.sample,
+        path_landscape_files=args.path_landscape_files,
+        scaling_factor=args.scaling_factor,
+        tile_size=args.tile_size,
+        image_scale=args.image_scale,
+        jitter=args.jitter,
+    )

@@ -2,6 +2,7 @@ version 1.0
 
 import "generate_landscape_files_ist.wdl" as ist
 import "generate_landscape_files_visium_hd.wdl" as visium_hd
+import "generate_landscape_files_I_ST.wdl" as I_ST
 
 workflow LandscapeFiles {
   input {
@@ -15,6 +16,7 @@ workflow LandscapeFiles {
     Int bin_size = 2
     Int jitter = 2
     Float image_scale = 1.0
+    Float scaling_factor = 0.171
     String celldega_docker_image = "jishar7/celldega_landscape_files@sha256:0a8febd6fd2672c3988cc593061d3278dd3c6005127e5cb221b531fd02d0c9d2"
   }
 
@@ -41,6 +43,20 @@ workflow LandscapeFiles {
         bin_size = bin_size,
         jitter = jitter,
         image_scale = image_scale,
+        celldega_docker_image = celldega_docker_image
+    }
+  }
+
+  if (technology == "IST") {
+    call I_ST.generate_landscape_files as I_ST_run {
+      input:
+        sample = sample,
+        data_dir = data_dir,
+        bucket_path_landscape_files = bucket_path_landscape_files,
+        scaling_factor = scaling_factor,
+        tile_size = tile_size,
+        image_scale = image_scale,
+        jitter = jitter,
         celldega_docker_image = celldega_docker_image
     }
   }
