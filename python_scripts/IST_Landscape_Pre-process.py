@@ -68,6 +68,8 @@ def main(
         df.columns = new_cols
         return df
 
+    print(f"Celldega version: {dega.__version__}")
+
     image_tile_layer = "h&e"
     suffix = ".webp[Q=100]"
 
@@ -75,6 +77,8 @@ def main(
 
     path_landscape_files = path_landscape_files + "/" + sample
     os.makedirs(path_landscape_files, exist_ok=True)
+
+    print("Processing Image...")
 
     # Image
     img_file_path = (
@@ -95,6 +99,8 @@ def main(
         image_tile_layer,
         suffix=suffix,
     )
+
+    print("Processing Cells...")
 
     # Cells
     cells = pd.read_csv(
@@ -201,6 +207,8 @@ def main(
             if inst_geo.shape[0] > 0:
                 inst_geo[["GEOMETRY", "name"]].to_parquet(filename)
 
+    print("Processing Genes...")
+
     # Meta Gene
     adata_cell = sc.read_10x_mtx(
         f"{data_dir}/"
@@ -229,6 +237,8 @@ def main(
 
     meta_gene.to_parquet(path_landscape_files + "/meta_gene.parquet")
 
+    print("Saving Landscape Parameters...")
+
     # Save Landscape Parameters
     max_pyramid_zoom = dega.pre.get_max_zoom_level(
         path_landscape_files + f"/pyramid_images/{image_tile_layer}_files"
@@ -253,11 +263,15 @@ def main(
     with open(path_landscape_files + "/landscape_parameters.json", "w") as f:
         json.dump(landscape_parameters, f, indent=2)
 
+    print("Saving Clusters...")
+
     # Meta Cluster
     meta_cluster = pd.DataFrame()
     meta_cluster.loc["0", "color"] = "#ff7f0e"
     meta_cluster.loc["0", "count"] = 1000
     meta_cluster.to_parquet(cell_clusters_dir + "/meta_cluster.parquet")
+
+    print("Processing CBG...")
 
     # Cell-by-gene (CBG)
     path_cbg = (
@@ -270,6 +284,8 @@ def main(
 
     dega.pre.make_meta_gene(cbg, path_landscape_files + "/meta_gene.parquet")
     dega.pre.save_cbg_gene_parquets("IST", path_landscape_files, cbg, verbose=True)
+
+    print("Processing Jittered Transcripts...")
 
     # Jittered transcripts
     sbg = dega.pre.landscape.read_cbg_mtx(
@@ -302,72 +318,22 @@ def main(
     del sbg[0]
     sbg = make_column_names_unique_fast(sbg)
 
-    rng = np.random.default_rng()
-
     trx_files_path = path_landscape_files + "/transcript_tiles"
     os.makedirs(trx_files_path, exist_ok=True)
 
-    for i in range(n_tiles_x):
-        if i % 10 == 0:
-            print("row", i)
+    dega.pre.write_pseudotranscripts_from_sbg(
+        spots=spots,
+        sbg=sbg,
+        gene_str_to_int=gene_str_to_int,
+        tile_bounds=tile_bounds,
+        tile_size=tile_size,
+        path_output=trx_files_path,
+        jitter=jitter,
+        coarse_tile_factor=10,
+        rng=np.random.default_rng() # np.random.Generator
+    )
 
-        for j in range(n_tiles_y):
-            filename = f"{trx_files_path}/transcripts_tile_{i}_{j}.parquet"
-            if Path(filename).exists():
-                continue
-
-            tile_x_min = tile_bounds["x_min"] + i * tile_size
-            tile_x_max = tile_x_min + tile_size
-            tile_y_min = tile_bounds["y_min"] + j * tile_size
-            tile_y_max = tile_y_min + tile_size
-
-            tile_spots = spots[
-                (spots.x >= tile_x_min)
-                & (spots.x < tile_x_max)
-                & (spots.y >= tile_y_min)
-                & (spots.y < tile_y_max)
-            ]
-
-            if tile_spots.empty:
-                continue
-
-            inst_spots = tile_spots.index.tolist()
-            tile_sbg = sbg.loc[inst_spots]
-            if tile_sbg.sparse.to_coo().nnz == 0:
-                continue
-
-            coo: coo_matrix = tile_sbg.sparse.to_coo().tocoo()
-            row = np.array([inst_spots[r] for r in coo.row])
-            col = tile_sbg.columns.to_numpy()[coo.col]
-            count = coo.data
-
-            df = pd.DataFrame({"spot": row, "gene": col, "count": count})
-            df = df[df["count"] > 0]
-            df = df.loc[df.index.repeat(df["count"].astype(int))].reset_index(drop=True)
-
-            df["x"] = df["spot"].map(tile_spots["x"])
-            df["y"] = df["spot"].map(tile_spots["y"])
-            df["name"] = df["gene"].map(gene_str_to_int).astype("int32")
-
-            pl_df = pl.DataFrame(df[["name", "x", "y"]])
-
-            if rng is None:
-                rng = np.random.default_rng()
-
-            jitter_radius = jitter / 2
-            jitter_x = rng.uniform(-jitter_radius, jitter_radius, size=len(pl_df))
-            jitter_y = rng.uniform(-jitter_radius, jitter_radius, size=len(pl_df))
-
-            pl_df = pl_df.with_columns(
-                [
-                    (pl.col("x") + pl.Series(jitter_x)).round(2).alias("x"),
-                    (pl.col("y") + pl.Series(jitter_y)).round(2).alias("y"),
-                ]
-            )
-
-            df_out = pl_df.to_pandas()
-            df_out["geometry"] = df_out[["x", "y"]].values.tolist()
-            df_out[["name", "geometry"]].to_parquet(filename, index=False)
+    print("Done.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
