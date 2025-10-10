@@ -3,15 +3,16 @@ set -euo pipefail
 
 show_usage() {
   cat <<EOF
-Usage: $0 --input <input_json>
+Usage: $0 --input <input_json> [--branch <git_branch>]
 
 Example:
-  $0 --input celldega_inputs_visium.json
+  $0 --input celldega_inputs_visium.json --branch I_ST-addition
 EOF
   exit 1
 }
 
 INPUT_JSON=""
+BRANCH="main"  # Default branch if none provided
 
 # Parse named arguments
 while [[ $# -gt 0 ]]; do
@@ -19,6 +20,11 @@ while [[ $# -gt 0 ]]; do
     --input)
       [[ $# -ge 2 ]] || { echo "Error: --input requires a value."; show_usage; }
       INPUT_JSON="$2"
+      shift 2
+      ;;
+    --branch)
+      [[ $# -ge 2 ]] || { echo "Error: --branch requires a value."; show_usage; }
+      BRANCH="$2"
       shift 2
       ;;
     -h|--help)
@@ -70,10 +76,20 @@ trap 'rm -rf "$WORKDIR"' EXIT
 
 cd "$WORKDIR"
 echo "Cloning workflow repository..."
-git clone --depth 1 https://github.com/broadinstitute/stp_celldega_landscape_files.git
+git clone --depth 1 --branch "$BRANCH" https://github.com/broadinstitute/stp_celldega_landscape_files.git
 
-echo "Running Omics workflow..."
-omics stp_celldega_landscape_files/LandscapeFiles.wdl \
+cd stp_celldega_landscape_files
+echo "Using branch: $BRANCH"
+
+# Verify checkout
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+if [[ "$current_branch" != "$BRANCH" ]]; then
+  echo "Error: Failed to switch to branch '$BRANCH'. Currently on '$current_branch'."
+  exit 1
+fi
+
+echo "Running Omics workflow from branch '$BRANCH'..."
+omics LandscapeFiles.wdl \
   --input "$INPUT_JSON" \
   --output-uri "${output_bucket_path%/}/workflow_logs/"
 
