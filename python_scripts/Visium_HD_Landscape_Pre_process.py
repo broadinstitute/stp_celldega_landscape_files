@@ -343,64 +343,75 @@ def main(
     total_trx = sbg.sum(axis=0).sum()
     print(f"Total transcripts: {total_trx/1e6:.1f}M")
 
-    rng = np.random.default_rng()
-    transcript_tiles_dir = Path(path_landscape_files) / "transcript_tiles"
-    transcript_tiles_dir.mkdir(parents=True, exist_ok=True)
+    trx_files_path = path_landscape_files + "/transcript_tiles"
+    os.makedirs(trx_files_path, exist_ok=True)
 
-    for i in range(n_tiles_x):
-        if i % 10 == 0:
-            print("row", i)
+    dega.pre.write_pseudotranscripts_from_sbg(
+        spots=spots,
+        sbg=sbg,
+        gene_str_to_int=gene_str_to_int,
+        tile_bounds=tile_bounds,
+        tile_size=tile_size,
+        path_output=trx_files_path,
+        jitter=jitter,
+        coarse_tile_factor=10,
+        rng=np.random.default_rng() # np.random.Generator
+    )
 
-        for j in range(n_tiles_y):
-            tile_x_min = tile_bounds["x_min"] + i * tile_size
-            tile_x_max = tile_x_min + tile_size
-            tile_y_min = tile_bounds["y_min"] + j * tile_size
-            tile_y_max = tile_y_min + tile_size
+    # for i in range(n_tiles_x):
+    #     if i % 10 == 0:
+    #         print("row", i)
 
-            tile_spots = spots[
-                (spots.x >= tile_x_min)
-                & (spots.x < tile_x_max)
-                & (spots.y >= tile_y_min)
-                & (spots.y < tile_y_max)
-            ]
-            if tile_spots.empty:
-                continue
+    #     for j in range(n_tiles_y):
+    #         tile_x_min = tile_bounds["x_min"] + i * tile_size
+    #         tile_x_max = tile_x_min + tile_size
+    #         tile_y_min = tile_bounds["y_min"] + j * tile_size
+    #         tile_y_max = tile_y_min + tile_size
 
-            inst_spots = tile_spots.index.tolist()
-            tile_sbg = sbg.loc[inst_spots]
-            tile_sbg_coo = csr_matrix(tile_sbg.values)
-            if tile_sbg_coo.nnz == 0:
-                continue
+    #         tile_spots = spots[
+    #             (spots.x >= tile_x_min)
+    #             & (spots.x < tile_x_max)
+    #             & (spots.y >= tile_y_min)
+    #             & (spots.y < tile_y_max)
+    #         ]
+    #         if tile_spots.empty:
+    #             continue
 
-            coo = csr_matrix(tile_sbg.values).tocoo()
-            row = np.array([inst_spots[r] for r in coo.row])
-            col = tile_sbg.columns.to_numpy()[coo.col]
-            count = coo.data
+    #         inst_spots = tile_spots.index.tolist()
+    #         tile_sbg = sbg.loc[inst_spots]
+    #         tile_sbg_coo = csr_matrix(tile_sbg.values)
+    #         if tile_sbg_coo.nnz == 0:
+    #             continue
 
-            df = pd.DataFrame({"spot": row, "gene": col, "count": count})
-            df = df[df["count"] > 0]
-            df = df.loc[df.index.repeat(df["count"].astype(int))].reset_index(drop=True)
+    #         coo = csr_matrix(tile_sbg.values).tocoo()
+    #         row = np.array([inst_spots[r] for r in coo.row])
+    #         col = tile_sbg.columns.to_numpy()[coo.col]
+    #         count = coo.data
 
-            df["x"] = df["spot"].map(tile_spots["x"])
-            df["y"] = df["spot"].map(tile_spots["y"])
-            df["name"] = df["gene"].map(gene_str_to_int).astype("int32")
+    #         df = pd.DataFrame({"spot": row, "gene": col, "count": count})
+    #         df = df[df["count"] > 0]
+    #         df = df.loc[df.index.repeat(df["count"].astype(int))].reset_index(drop=True)
 
-            pl_df = pl.DataFrame(df[["name", "x", "y"]])
-            jitter_radius = jitter / 2
-            jitter_x = rng.uniform(-jitter_radius, jitter_radius, size=len(pl_df))
-            jitter_y = rng.uniform(-jitter_radius, jitter_radius, size=len(pl_df))
+    #         df["x"] = df["spot"].map(tile_spots["x"])
+    #         df["y"] = df["spot"].map(tile_spots["y"])
+    #         df["name"] = df["gene"].map(gene_str_to_int).astype("int32")
 
-            pl_df = pl_df.with_columns(
-                [
-                    (pl.col("x") + pl.Series(jitter_x)).round(2).alias("x"),
-                    (pl.col("y") + pl.Series(jitter_y)).round(2).alias("y"),
-                ]
-            )
+    #         pl_df = pl.DataFrame(df[["name", "x", "y"]])
+    #         jitter_radius = jitter / 2
+    #         jitter_x = rng.uniform(-jitter_radius, jitter_radius, size=len(pl_df))
+    #         jitter_y = rng.uniform(-jitter_radius, jitter_radius, size=len(pl_df))
 
-            df_out = pl_df.to_pandas()
-            df_out["geometry"] = df_out[["x", "y"]].values.tolist()
-            filename = transcript_tiles_dir / f"transcripts_tile_{i}_{j}.parquet"
-            df_out[["name", "geometry"]].to_parquet(filename, index=False)
+    #         pl_df = pl_df.with_columns(
+    #             [
+    #                 (pl.col("x") + pl.Series(jitter_x)).round(2).alias("x"),
+    #                 (pl.col("y") + pl.Series(jitter_y)).round(2).alias("y"),
+    #             ]
+    #         )
+
+    #         df_out = pl_df.to_pandas()
+    #         df_out["geometry"] = df_out[["x", "y"]].values.tolist()
+    #         filename = transcript_tiles_dir / f"transcripts_tile_{i}_{j}.parquet"
+    #         df_out[["name", "geometry"]].to_parquet(filename, index=False)
 
     # Save Landscape Parameters
     image_files_path = path_landscape_files + f"/pyramid_images/{image_tile_layer}_files"
@@ -425,6 +436,7 @@ def main(
     with landscape_parameters_path.open("w") as f:
         json.dump(landscape_parameters, f, indent=2)
 
+    print("Done.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
