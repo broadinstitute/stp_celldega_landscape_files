@@ -338,6 +338,7 @@ def main(
     sbg = dega.pre.read_cbg_mtx(
         f"{data_dir}/{sample}/binned_outputs/square_00{bin_size}um/filtered_feature_bc_matrix",
     )
+    sbg.columns = sbg.columns.str.replace("/", "_", regex=False)
     sbg = make_column_names_unique_fast(sbg)
 
     total_trx = sbg.sum(axis=0).sum()
@@ -357,61 +358,6 @@ def main(
         coarse_tile_factor=10,
         rng=np.random.default_rng() # np.random.Generator
     )
-
-    # for i in range(n_tiles_x):
-    #     if i % 10 == 0:
-    #         print("row", i)
-
-    #     for j in range(n_tiles_y):
-    #         tile_x_min = tile_bounds["x_min"] + i * tile_size
-    #         tile_x_max = tile_x_min + tile_size
-    #         tile_y_min = tile_bounds["y_min"] + j * tile_size
-    #         tile_y_max = tile_y_min + tile_size
-
-    #         tile_spots = spots[
-    #             (spots.x >= tile_x_min)
-    #             & (spots.x < tile_x_max)
-    #             & (spots.y >= tile_y_min)
-    #             & (spots.y < tile_y_max)
-    #         ]
-    #         if tile_spots.empty:
-    #             continue
-
-    #         inst_spots = tile_spots.index.tolist()
-    #         tile_sbg = sbg.loc[inst_spots]
-    #         tile_sbg_coo = csr_matrix(tile_sbg.values)
-    #         if tile_sbg_coo.nnz == 0:
-    #             continue
-
-    #         coo = csr_matrix(tile_sbg.values).tocoo()
-    #         row = np.array([inst_spots[r] for r in coo.row])
-    #         col = tile_sbg.columns.to_numpy()[coo.col]
-    #         count = coo.data
-
-    #         df = pd.DataFrame({"spot": row, "gene": col, "count": count})
-    #         df = df[df["count"] > 0]
-    #         df = df.loc[df.index.repeat(df["count"].astype(int))].reset_index(drop=True)
-
-    #         df["x"] = df["spot"].map(tile_spots["x"])
-    #         df["y"] = df["spot"].map(tile_spots["y"])
-    #         df["name"] = df["gene"].map(gene_str_to_int).astype("int32")
-
-    #         pl_df = pl.DataFrame(df[["name", "x", "y"]])
-    #         jitter_radius = jitter / 2
-    #         jitter_x = rng.uniform(-jitter_radius, jitter_radius, size=len(pl_df))
-    #         jitter_y = rng.uniform(-jitter_radius, jitter_radius, size=len(pl_df))
-
-    #         pl_df = pl_df.with_columns(
-    #             [
-    #                 (pl.col("x") + pl.Series(jitter_x)).round(2).alias("x"),
-    #                 (pl.col("y") + pl.Series(jitter_y)).round(2).alias("y"),
-    #             ]
-    #         )
-
-    #         df_out = pl_df.to_pandas()
-    #         df_out["geometry"] = df_out[["x", "y"]].values.tolist()
-    #         filename = transcript_tiles_dir / f"transcripts_tile_{i}_{j}.parquet"
-    #         df_out[["name", "geometry"]].to_parquet(filename, index=False)
 
     # Save Landscape Parameters
     image_files_path = path_landscape_files + f"/pyramid_images/{image_tile_layer}_files"

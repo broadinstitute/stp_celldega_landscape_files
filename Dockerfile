@@ -54,7 +54,7 @@ RUN gcloud --version && gsutil version -l && aws --version
 # --- Python dependencies ---
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir \
-      "celldega>=0.1.8" \
+      celldega \
       pyvips \
       fiona \
       geopandas \
