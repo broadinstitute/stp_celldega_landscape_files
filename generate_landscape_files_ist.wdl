@@ -56,7 +56,7 @@ dega.pre.main(
     sample=os.environ["SAMPLE"],
     data_root_dir=os.environ["DATA_ROOT"],
     tile_size=~{tile_size},
-    image_tile_layer=~{image_tile_layer},
+    image_tile_layer="~{image_tile_layer}",
     path_landscape_files=os.environ["OUTDIR"],
     use_int_index=True,
 )
