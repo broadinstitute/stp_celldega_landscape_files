@@ -292,11 +292,13 @@ def main(
         f"{data_dir}/"
         f"{sample}/{sample}_raw",
         technology="IST",
-        barcodes_name="coords",
+        # barcodes_name="coords",
+        barcodes_name="barcodes",
     )
 
     coords = sbg.index.tolist()
     tmp = [x.split(":") for x in coords]
+    tmp = [[x for x in row if x.isdigit()] for row in tmp]
     df_tmp = pd.DataFrame(tmp, dtype=float)
     df_tmp = df_tmp / 1000
     df_tmp.columns = ["y", "x"]
