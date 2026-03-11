@@ -16,7 +16,6 @@ workflow LandscapeFiles {
     Int bin_size = 2
     Int jitter = 1
     Float image_scale = 1.0
-    Float scaling_factor = 0.171
     String image_tile_layer = "all"
     String celldega_docker_image = "jishar7/celldega_landscape_files@sha256:e92e7c5b430b47dedcd6dd57249fb882b1c865860f001c7bacc0a4267308b33d"
   }
@@ -55,7 +54,6 @@ workflow LandscapeFiles {
         sample = sample,
         data_dir = data_dir,
         bucket_path_landscape_files = bucket_path_landscape_files,
-        scaling_factor = scaling_factor,
         tile_size = tile_size,
         image_scale = image_scale,
         jitter = jitter,
