@@ -18,7 +18,7 @@ workflow LandscapeFiles {
     Float image_scale = 1.0
     Float scaling_factor = 0.171
     String image_tile_layer = "all"
-    String celldega_docker_image = "jishar7/celldega_landscape_files@sha256:136150337885ed1a8adb1b80de01b4bab578f6b5f1691a4168914431b28fbb8d"
+    String celldega_docker_image = "jishar7/celldega_landscape_files@sha256:e92e7c5b430b47dedcd6dd57249fb882b1c865860f001c7bacc0a4267308b33d"
   }
 
   if (technology == "Xenium" || technology == "MERSCOPE") {

@@ -5,7 +5,6 @@ task generate_landscape_files {
     String sample
     String data_dir
     String bucket_path_landscape_files
-    Float scaling_factor
     Int tile_size
     Float image_scale
     Int jitter
@@ -32,18 +31,24 @@ task generate_landscape_files {
     if [[ "${USER_DATA_DIR}" == s3://* ]]; then
       echo "Detected AWS S3 path, using aws s3 sync..."
 
-      aws s3 cp "${USER_DATA_DIR%/}/results/${SAMPLE}/${SAMPLE}.ome.tiff" "${IN_DIR}/"
+      # copy ome tiff (any filename)
+      aws s3 cp "${USER_DATA_DIR%/}/results/${SAMPLE}/" "${IN_DIR}/" \
+        --recursive --exclude "*" --include "*.ome.tiff"
+
       aws s3 sync "${USER_DATA_DIR%/}/intermediate_results/02_matrix/${SAMPLE}" "${IN_DIR}/"
       aws s3 cp "${USER_DATA_DIR%/}/intermediate_results/stats/sample_prep_stats_sample.csv" "${IN_DIR}/"
-      aws s3 cp "${USER_DATA_DIR%/}/results/${SAMPLE}/${SAMPLE}_Expanded_5um_cell_contour_coords.csv" "${IN_DIR}/"
+
+      # copy any contour file ending with 5um_cell_contour_coords.csv
+      aws s3 cp "${USER_DATA_DIR%/}/results/${SAMPLE}/" "${IN_DIR}/" \
+        --recursive --exclude "*" --include "*5um_cell_contour_coords.csv"
 
     elif [[ "${USER_DATA_DIR}" == gs://* ]]; then
       echo "Detected Google Cloud Storage path, using gcloud storage rsync..."
 
-      gcloud storage cp "${USER_DATA_DIR%/}/results/${SAMPLE}/${SAMPLE}.ome.tiff" "${IN_DIR}/"
+      gcloud storage cp "${USER_DATA_DIR%/}/results/${SAMPLE}/*.ome.tiff" "${IN_DIR}/"
       gcloud storage rsync -r "${USER_DATA_DIR%/}/intermediate_results/02_matrix/${SAMPLE}" "${IN_DIR}/"
       gcloud storage cp "${USER_DATA_DIR%/}/intermediate_results/stats/sample_prep_stats_sample.csv" "${IN_DIR}/"
-      gcloud storage cp "${USER_DATA_DIR%/}/results/${SAMPLE}/${SAMPLE}_Expanded_5um_cell_contour_coords.csv" "${IN_DIR}/"
+      gcloud storage cp "${USER_DATA_DIR%/}/results/${SAMPLE}/*5um_cell_contour_coords.csv" "${IN_DIR}/"
 
     else
       echo "ERROR: data_dir must start with s3:// or gs://"
@@ -61,7 +66,6 @@ task generate_landscape_files {
         --data_dir "${DATA_ROOT}" \
         --sample "~{sample}" \
         --path_landscape_files "${OUTDIR}" \
-        --scaling_factor ~{scaling_factor} \
         --tile_size ~{tile_size} \
         --image_scale ~{image_scale} \
         --jitter ~{jitter}
