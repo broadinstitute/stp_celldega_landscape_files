@@ -16,12 +16,12 @@ from matplotlib.colors import to_hex
 from scipy.sparse import coo_matrix
 from shapely.geometry import Polygon
 
+import xml.etree.ElementTree as ET
 
 def main(
     data_dir,
     sample,
     path_landscape_files,
-    scaling_factor=0.171,
     tile_size=500,
     image_scale=1.0,
     jitter=1,
@@ -73,8 +73,6 @@ def main(
     image_tile_layer = "h&e"
     suffix = ".webp[Q=100]"
 
-    high_res_scale = 1 / scaling_factor
-
     path_landscape_files = path_landscape_files + "/" + sample
     os.makedirs(path_landscape_files, exist_ok=True)
 
@@ -88,6 +86,12 @@ def main(
     with tifffile.TiffFile(img_file_path) as tif:
         series = tif.series[0]
         image_data = series.asarray()
+        root = ET.fromstring(tif.ome_metadata)
+
+        pixels = root.find(".//{*}Image[@ID='Image:RegImage_20x_pyramid']/{*}Pixels")
+        scaling_factor = float(pixels.attrib["PhysicalSizeX"]) / 1000
+
+    high_res_scale = 1 / scaling_factor
 
     tifffile.imwrite(
         path_landscape_files + "/output_regular.tif", image_data, compression=None
@@ -292,11 +296,13 @@ def main(
         f"{data_dir}/"
         f"{sample}/{sample}_raw",
         technology="IST",
-        barcodes_name="coords",
+        # barcodes_name="coords",
+        barcodes_name="barcodes",
     )
 
     coords = sbg.index.tolist()
     tmp = [x.split(":") for x in coords]
+    tmp = [[x for x in row if x.isdigit()] for row in tmp]
     df_tmp = pd.DataFrame(tmp, dtype=float)
     df_tmp = df_tmp / 1000
     df_tmp.columns = ["y", "x"]
@@ -342,7 +348,6 @@ if __name__ == "__main__":
     parser.add_argument("--data_dir", type=str)
     parser.add_argument("--sample", type=str)
     parser.add_argument("--path_landscape_files", type=str)
-    parser.add_argument("--scaling_factor", type=float)
     parser.add_argument("--tile_size", type=int)
     parser.add_argument("--image_scale", type=float)
     parser.add_argument("--jitter", type=int)
@@ -352,7 +357,6 @@ if __name__ == "__main__":
         data_dir=args.data_dir,
         sample=args.sample,
         path_landscape_files=args.path_landscape_files,
-        scaling_factor=args.scaling_factor,
         tile_size=args.tile_size,
         image_scale=args.image_scale,
         jitter=args.jitter,

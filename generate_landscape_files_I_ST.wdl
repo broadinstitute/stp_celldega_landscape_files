@@ -5,7 +5,6 @@ task generate_landscape_files {
     String sample
     String data_dir
     String bucket_path_landscape_files
-    Float scaling_factor
     Int tile_size
     Float image_scale
     Int jitter
@@ -32,18 +31,31 @@ task generate_landscape_files {
     if [[ "${USER_DATA_DIR}" == s3://* ]]; then
       echo "Detected AWS S3 path, using aws s3 sync..."
 
-      aws s3 cp "${USER_DATA_DIR%/}/results/${SAMPLE}/${SAMPLE}.ome.tiff" "${IN_DIR}/"
+      # find ome.tiff
+      OME_FILE=$(aws s3 ls "${USER_DATA_DIR%/}/results/${SAMPLE}/" | awk '{print $4}' | grep '\.ome\.tiff$' | head -n1)
+      aws s3 cp "${USER_DATA_DIR%/}/results/${SAMPLE}/${OME_FILE}" "${IN_DIR}/${SAMPLE}.ome.tiff"
+
       aws s3 sync "${USER_DATA_DIR%/}/intermediate_results/02_matrix/${SAMPLE}" "${IN_DIR}/"
       aws s3 cp "${USER_DATA_DIR%/}/intermediate_results/stats/sample_prep_stats_sample.csv" "${IN_DIR}/"
-      aws s3 cp "${USER_DATA_DIR%/}/results/${SAMPLE}/${SAMPLE}_Expanded_5um_cell_contour_coords.csv" "${IN_DIR}/"
+
+      # find contour csv
+      CSV_FILE=$(aws s3 ls "${USER_DATA_DIR%/}/results/${SAMPLE}/" | awk '{print $4}' | grep '5um_cell_contour_coords\.csv$' | head -n1)
+      aws s3 cp "${USER_DATA_DIR%/}/results/${SAMPLE}/${CSV_FILE}" "${IN_DIR}/${SAMPLE}_Expanded_5um_cell_contour_coords.csv"
+
 
     elif [[ "${USER_DATA_DIR}" == gs://* ]]; then
       echo "Detected Google Cloud Storage path, using gcloud storage rsync..."
 
-      gcloud storage cp "${USER_DATA_DIR%/}/results/${SAMPLE}/${SAMPLE}.ome.tiff" "${IN_DIR}/"
+      # find ome.tiff
+      OME_FILE=$(gcloud storage ls "${USER_DATA_DIR%/}/results/${SAMPLE}/" | grep '\.ome\.tiff$' | head -n1)
+      gcloud storage cp "${OME_FILE}" "${IN_DIR}/${SAMPLE}.ome.tiff"
+
       gcloud storage rsync -r "${USER_DATA_DIR%/}/intermediate_results/02_matrix/${SAMPLE}" "${IN_DIR}/"
       gcloud storage cp "${USER_DATA_DIR%/}/intermediate_results/stats/sample_prep_stats_sample.csv" "${IN_DIR}/"
-      gcloud storage cp "${USER_DATA_DIR%/}/results/${SAMPLE}/${SAMPLE}_Expanded_5um_cell_contour_coords.csv" "${IN_DIR}/"
+
+      # find contour csv
+      CSV_FILE=$(gcloud storage ls "${USER_DATA_DIR%/}/results/${SAMPLE}/" | grep '5um_cell_contour_coords\.csv$' | head -n1)
+      gcloud storage cp "${CSV_FILE}" "${IN_DIR}/${SAMPLE}_Expanded_5um_cell_contour_coords.csv"
 
     else
       echo "ERROR: data_dir must start with s3:// or gs://"
@@ -61,7 +73,6 @@ task generate_landscape_files {
         --data_dir "${DATA_ROOT}" \
         --sample "~{sample}" \
         --path_landscape_files "${OUTDIR}" \
-        --scaling_factor ~{scaling_factor} \
         --tile_size ~{tile_size} \
         --image_scale ~{image_scale} \
         --jitter ~{jitter}
