@@ -107,45 +107,45 @@ def main(
     print("Processing Cells...")
 
     # Cells
-    cells = pd.read_csv(
-        f"{data_dir}/"
-        f"{sample}/{sample}_cell_binned/barcodes.tsv.gz",
-        sep="\t",
-        header=None,
-        index_col=0,
-    )
+    # cells = pd.read_csv(
+    #     f"{data_dir}/"
+    #     f"{sample}/{sample}_cell_binned/barcodes.tsv.gz",
+    #     sep="\t",
+    #     header=None,
+    #     index_col=0,
+    # )
 
     gc = pd.read_csv(
         f"{data_dir}/{sample}/sample_prep_stats_sample.csv",
         index_col=0,
     )
 
-    tmp_ini = pd.DataFrame([x.split(":") for x in cells.index.tolist()])
-    tmp_ini.set_index(0, inplace=True)
-    tmp_ini.index.name = None
-    tmp_ini.columns = ["x", "y"]
-    tmp_ini = tmp_ini.astype(float)
+    # tmp_ini = pd.DataFrame([x.split(":") for x in cells.index.tolist()])
+    # tmp_ini.set_index(0, inplace=True)
+    # tmp_ini.index.name = None
+    # tmp_ini.columns = ["x", "y"]
+    # tmp_ini = tmp_ini.astype(float)
 
-    tmp = pd.DataFrame()
-    tmp["x"] = tmp_ini["y"]
-    tmp["y"] = tmp_ini["x"]
+    # tmp = pd.DataFrame()
+    # tmp["x"] = tmp_ini["y"]
+    # tmp["y"] = tmp_ini["x"]
 
-    tmp["x"] = (tmp["x"] - gc.loc[sample, "Global_left"]) * high_res_scale
-    tmp["y"] = (tmp["y"] - gc.loc[sample, "Global_top"]) * high_res_scale
+    # tmp["x"] = (tmp["x"] - gc.loc[sample, "Global_left"]) * high_res_scale
+    # tmp["y"] = (tmp["y"] - gc.loc[sample, "Global_top"]) * high_res_scale
 
-    tmp["geometry"] = tmp.apply(lambda row: [row["x"], row["y"]], axis=1)
-    tmp["name"] = pd.Series(tmp.index.tolist(), index=tmp.index.tolist())
+    # tmp["geometry"] = tmp.apply(lambda row: [row["x"], row["y"]], axis=1)
+    # tmp["name"] = pd.Series(tmp.index.tolist(), index=tmp.index.tolist())
 
-    tmp[["name", "geometry"]].to_parquet(
-        path_landscape_files + "/cell_metadata.parquet"
-    )
+    # tmp[["name", "geometry"]].to_parquet(
+    #     path_landscape_files + "/cell_metadata.parquet"
+    # )
 
-    clusters = pd.DataFrame(index=tmp.index.tolist())
-    clusters["cluster"] = pd.Series(0, index=tmp.index.tolist())
+    # clusters = pd.DataFrame(index=tmp.index.tolist())
+    # clusters["cluster"] = pd.Series(0, index=tmp.index.tolist())
 
-    cell_clusters_dir = path_landscape_files + "/cell_clusters"
-    os.makedirs(cell_clusters_dir, exist_ok=True)
-    clusters.to_parquet(f"{cell_clusters_dir}/cluster.parquet")
+    # cell_clusters_dir = path_landscape_files + "/cell_clusters"
+    # os.makedirs(cell_clusters_dir, exist_ok=True)
+    # clusters.to_parquet(f"{cell_clusters_dir}/cluster.parquet")
 
     # Segmented Cells
     tile_bounds = {"x_min": 0, "x_max": 55000, "y_min": 0, "y_max": 55000}
@@ -178,6 +178,34 @@ def main(
 
     cell_segmentation_dir = path_landscape_files + "/cell_segmentation"
     os.makedirs(cell_segmentation_dir, exist_ok=True)
+
+    gdf_cells.index = "cell" + gdf_cells.index.astype(str)
+    cells.index = "cell" + cells.index.astype(str)
+
+    clusters = pd.DataFrame(index=gdf_cells.index.tolist())
+    clusters["cluster"] = pd.Series(0, index=gdf_cells.index.tolist())
+
+    cell_clusters_dir = path_landscape_files + "/cell_clusters"
+    os.makedirs(cell_clusters_dir, exist_ok=True)
+    clusters.to_parquet(f"{cell_clusters_dir}/cluster.parquet")
+
+    gdf_cells_copy = gdf_cells.copy()
+
+    gdf_cells_copy.reset_index(inplace=True)
+    gdf_cells_copy.rename(columns={"cell_id":"name"}, inplace=True)
+
+    gdf_cells_copy["geometry"] = gdf_cells_copy.apply(lambda row: [row["center_x"], row["center_y"]], axis=1)
+
+    gdf_cells_copy[["name", "geometry"]].to_parquet(
+        path_landscape_files + "/cell_metadata.parquet"
+    )
+
+    cell_str_to_int_mapping = dega.pre.boundary_tile._get_name_mapping(
+        path_landscape_files, layer="boundary", segmentation="default"
+    )
+
+    gdf_cells.index = gdf_cells.index.astype(str).map(cell_str_to_int_mapping)
+    cells.index = cells.index.astype(str).map(cell_str_to_int_mapping)
 
     tile_size_x = tile_size
     tile_size_y = tile_size
