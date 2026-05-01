@@ -10,6 +10,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN set -eux; \
     apt-get update && \
     apt-get install -y --no-install-recommends \
+        git \
+        npm \
         build-essential \
         unzip \
         ca-certificates \
@@ -52,9 +54,11 @@ RUN set -eux; \
 RUN gcloud --version && gsutil version -l && aws --version
 
 # --- Python dependencies ---
+ARG CELLDEGA_REF=main
+
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir \
-      celldega \
+      "git+https://github.com/broadinstitute/celldega.git@${CELLDEGA_REF}" \
       pyvips \
       fiona \
       geopandas \
