@@ -21,6 +21,8 @@ workflow LandscapeFiles {
     String celldega_docker_image = "jishar7/celldega_landscape_files:main_V1.0"
   }
 
+  call get_project_id
+
   Boolean use_instrument_paths = dataset_name != "" && instrument_run != ""
 
   String normalized_technology =
@@ -32,12 +34,12 @@ workflow LandscapeFiles {
 
   String resolved_input_data_dir =
     if use_instrument_paths
-    then "data/instrument_data/~{normalized_technology}/~{instrument_run}"
+    then "s3://manifold-ai-sc-broad-prod-platform-storage/research/projects/~{get_project_id.project_id}/data/instrument_data/~{normalized_technology}/~{instrument_run}"
     else input_data_dir
 
   String resolved_output_dega_files_dir =
     if use_instrument_paths
-    then "data/DegaFiles"
+    then "s3://manifold-ai-sc-broad-prod-platform-storage/research/projects/~{get_project_id.project_id}/data/DegaFiles"
     else output_dega_files_dir
 
   if (technology == "Xenium" || technology == "MERSCOPE") {
@@ -76,5 +78,30 @@ workflow LandscapeFiles {
         jitter = jitter,
         celldega_docker_image = celldega_docker_image
     }
+  }
+}
+
+task get_project_id {
+  command <<<
+    set -euo pipefail
+
+    PROJECT_ID_VALUE="$(printenv PROJECT_ID || true)"
+
+    if [ -z "$PROJECT_ID_VALUE" ]; then
+      echo "ERROR: PROJECT_ID is not set in the task environment" >&2
+      exit 1
+    fi
+
+    echo "$PROJECT_ID_VALUE" > project_id.txt
+  >>>
+
+  output {
+    String project_id = read_string("project_id.txt")
+  }
+
+  runtime {
+    docker: "ubuntu:22.04"
+    memory: "1 GB"
+    cpu: 1
   }
 }
