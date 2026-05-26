@@ -26,6 +26,42 @@ task generate_landscape_files {
     OUTDIR="${DATA_ROOT}/landscape_files_temp"
     IN_DIR="${DATA_ROOT}/${SAMPLE}"
 
+    echo "Checking whether output destination already exists..."
+
+    DEST="${USER_OUTPUT_DEGA_FILES_DIR%/}/${SAMPLE}/"
+
+    if [[ "${USER_OUTPUT_DEGA_FILES_DIR}" == s3://* ]]; then
+      S3_PATH="${DEST#s3://}"
+      S3_BUCKET="${S3_PATH%%/*}"
+      S3_PREFIX="${S3_PATH#*/}"
+
+      EXISTING_COUNT="$(
+        aws s3api list-objects-v2 \
+          --bucket "${S3_BUCKET}" \
+          --prefix "${S3_PREFIX}" \
+          --max-keys 1 \
+          --query 'KeyCount' \
+          --output text
+      )"
+
+      if [[ "${EXISTING_COUNT}" != "0" ]]; then
+        echo "Output already exists at ${DEST}"
+        echo "Skipping celldega because landscape files already exist."
+        exit 0
+      fi
+
+    elif [[ "${USER_OUTPUT_DEGA_FILES_DIR}" == gs://* ]]; then
+      if gcloud storage ls -r "${DEST}**" >/tmp/existing_gcs_outputs.txt 2>/dev/null && [[ -s /tmp/existing_gcs_outputs.txt ]]; then
+        echo "Output already exists at ${DEST}"
+        echo "Skipping celldega because landscape files already exist."
+        exit 0
+      fi
+
+    else
+      echo "ERROR: output_dega_files_dir must start with s3:// or gs://"
+      exit 1
+    fi
+
     mkdir -p "${IN_DIR}" "${OUTDIR}"
 
     echo "Checking input_data_dir source: ${USER_INPUT_DATA_DIR}"
@@ -83,10 +119,10 @@ task generate_landscape_files {
     echo "Syncing outputs back to bucket..."
 
     if [[ "${USER_OUTPUT_DEGA_FILES_DIR}" == s3://* ]]; then
-      aws s3 sync "${OUTDIR}/" "${USER_OUTPUT_DEGA_FILES_DIR%/}/" --no-progress
+      aws s3 sync "${OUTDIR}/" "${DEST}" --no-progress
 
     elif [[ "${USER_OUTPUT_DEGA_FILES_DIR}" == gs://* ]]; then
-      gcloud storage rsync -r "${OUTDIR}/" "${USER_OUTPUT_DEGA_FILES_DIR%/}/"
+      gcloud storage rsync -r "${OUTDIR}/" "${DEST}"
 
     else
       echo "ERROR: output_dega_files_dir must start with s3:// or gs://"

@@ -6,13 +6,13 @@ import "generate_landscape_files_I_ST.wdl" as I_ST
 
 workflow LandscapeFiles {
   input {
-    String dataset_name = ""
-    String project_id = ""
+    String dataset_name
+    String project_id
     String input_data_dir = ""
     String output_dega_files_dir = ""
     Int tile_size = 500
     String technology
-    String instrument_run = ""
+    String instrument_run
     String image_file_path = ""
     Boolean use_dummy_clusters = false
     Int bin_size = 2
