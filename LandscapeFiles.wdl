@@ -33,7 +33,7 @@ workflow LandscapeFiles {
 
   String resolved_input_data_dir =
     if use_instrument_paths
-    then "s3://manifold-ai-sc-broad-prod-platform-storage/research/projects/~{project_id}/data/instrument_data/~{normalized_technology}/~{instrument_run}"
+    then "s3://manifold-ai-sc-broad-prod-platform-storage/research/projects/~{project_id}/data/instrument_data/~{normalized_technology}/~{instrument_run}/~{dataset_name}"
     else input_data_dir
 
   String resolved_output_dega_files_dir =

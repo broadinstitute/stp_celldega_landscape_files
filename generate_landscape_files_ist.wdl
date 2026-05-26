@@ -47,6 +47,12 @@ task generate_landscape_files {
       exit 2
     fi
 
+    if [[ "${PROJECT_ID+x}" == "x" ]]; then
+      echo "PROJECT_ID exists: ${PROJECT_ID:-<EMPTY>}"
+    else
+      echo "PROJECT_ID does not exist in environment"
+    fi
+
     export SAMPLE DATA_ROOT OUTDIR
 
     echo "Running celldega..."
