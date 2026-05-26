@@ -1,10 +1,10 @@
 version 1.0
+
 task generate_landscape_files {
 
   input {
-    String sample
-    String data_dir
-    String bucket_path_landscape_files
+    String input_data_dir
+    String output_dega_files_dir
     Int tile_size
     Float image_scale
     Int jitter
@@ -16,9 +16,11 @@ task generate_landscape_files {
     set -euo pipefail
     IFS=$'\n\t'
 
-    SAMPLE="~{sample}"
-    USER_DATA_DIR="~{data_dir}"
-    USER_OUTPUT_DIR="~{bucket_path_landscape_files}"
+    USER_INPUT_DATA_DIR="~{input_data_dir}"
+    USER_OUTPUT_DEGA_FILES_DIR="~{output_dega_files_dir}"
+
+    SAMPLE="$(basename "${USER_INPUT_DATA_DIR%/}")"
+    USER_DATA_DIR="$(dirname "${USER_INPUT_DATA_DIR%/}")"
 
     DATA_ROOT="${PWD}"
     OUTDIR="${DATA_ROOT}/landscape_files_temp"
@@ -26,24 +28,25 @@ task generate_landscape_files {
 
     mkdir -p "${IN_DIR}" "${OUTDIR}"
 
-    echo "Checking data_dir source: ${USER_DATA_DIR}"
+    echo "Checking input_data_dir source: ${USER_INPUT_DATA_DIR}"
+    echo "Detected IST run root: ${USER_DATA_DIR}"
+    echo "Detected sample: ${SAMPLE}"
 
-    if [[ "${USER_DATA_DIR}" == s3://* ]]; then
+    if [[ "${USER_INPUT_DATA_DIR}" == s3://* ]]; then
       echo "Detected AWS S3 path, using aws s3 sync..."
 
       # find ome.tiff
       OME_FILE=$(aws s3 ls "${USER_DATA_DIR%/}/results/${SAMPLE}/" | awk '{print $4}' | grep '\.ome\.tiff$' | head -n1)
       aws s3 cp "${USER_DATA_DIR%/}/results/${SAMPLE}/${OME_FILE}" "${IN_DIR}/${SAMPLE}.ome.tiff"
 
-      aws s3 sync "${USER_DATA_DIR%/}/intermediate_results/02_matrix/${SAMPLE}" "${IN_DIR}/"
+      aws s3 sync "${USER_DATA_DIR%/}/intermediate_results/02_matrix/${SAMPLE}" "${IN_DIR}/" --exclude "._*" --exclude ".DS_Store"
       aws s3 cp "${USER_DATA_DIR%/}/intermediate_results/stats/sample_prep_stats_sample.csv" "${IN_DIR}/"
 
       # find contour csv
       CSV_FILE=$(aws s3 ls "${USER_DATA_DIR%/}/results/${SAMPLE}/" | awk '{print $4}' | grep '5um_cell_contour_coords\.csv$' | head -n1)
       aws s3 cp "${USER_DATA_DIR%/}/results/${SAMPLE}/${CSV_FILE}" "${IN_DIR}/${SAMPLE}_Expanded_5um_cell_contour_coords.csv"
 
-
-    elif [[ "${USER_DATA_DIR}" == gs://* ]]; then
+    elif [[ "${USER_INPUT_DATA_DIR}" == gs://* ]]; then
       echo "Detected Google Cloud Storage path, using gcloud storage rsync..."
 
       # find ome.tiff
@@ -58,12 +61,12 @@ task generate_landscape_files {
       gcloud storage cp "${CSV_FILE}" "${IN_DIR}/${SAMPLE}_Expanded_5um_cell_contour_coords.csv"
 
     else
-      echo "ERROR: data_dir must start with s3:// or gs://"
+      echo "ERROR: input_data_dir must start with s3:// or gs://"
       exit 1
     fi
 
     if [[ -z "$(find "${IN_DIR}" -type f -print -quit)" ]]; then
-      echo "ERROR: No files found under ${USER_DATA_DIR}/${SAMPLE}." >&2
+      echo "ERROR: No files found for sample ${SAMPLE} under ${USER_DATA_DIR}." >&2
       exit 2
     fi
 
@@ -71,7 +74,7 @@ task generate_landscape_files {
 
     python3 /opt/IST_Landscape_Pre-process.py \
         --data_dir "${DATA_ROOT}" \
-        --sample "~{sample}" \
+        --sample "${SAMPLE}" \
         --path_landscape_files "${OUTDIR}" \
         --tile_size ~{tile_size} \
         --image_scale ~{image_scale} \
@@ -79,12 +82,14 @@ task generate_landscape_files {
 
     echo "Syncing outputs back to bucket..."
 
-    if [[ "${USER_OUTPUT_DIR}" == s3://* ]]; then
-      aws s3 sync "${OUTDIR}/" "${USER_OUTPUT_DIR%/}/" --no-progress
-    elif [[ "${USER_OUTPUT_DIR}" == gs://* ]]; then
-      gcloud storage rsync -r "${OUTDIR}/" "${USER_OUTPUT_DIR%/}/"
+    if [[ "${USER_OUTPUT_DEGA_FILES_DIR}" == s3://* ]]; then
+      aws s3 sync "${OUTDIR}/" "${USER_OUTPUT_DEGA_FILES_DIR%/}/" --no-progress
+
+    elif [[ "${USER_OUTPUT_DEGA_FILES_DIR}" == gs://* ]]; then
+      gcloud storage rsync -r "${OUTDIR}/" "${USER_OUTPUT_DEGA_FILES_DIR%/}/"
+
     else
-      echo "ERROR: bucket_path_landscape_files must start with s3:// or gs://"
+      echo "ERROR: output_dega_files_dir must start with s3:// or gs://"
       exit 1
     fi
 
