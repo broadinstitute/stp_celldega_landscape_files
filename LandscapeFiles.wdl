@@ -32,7 +32,7 @@ workflow LandscapeFiles {
 
   String resolved_input_data_dir =
     if use_instrument_paths
-    then "data/instrument_data/~{normalized_technology}/~{instrument_run}/~{dataset_name}"
+    then "data/instrument_data/~{normalized_technology}/~{instrument_run}"
     else input_data_dir
 
   String resolved_output_dega_files_dir =
