@@ -93,7 +93,7 @@ task generate_landscape_files {
 
   runtime {
     docker: celldega_docker_image
-    memory: "200 GB"
+    memory: "400 GB"
     disks: "local-disk 200 HDD"
     preemptible: 0
     continueOnReturnCode: 0
