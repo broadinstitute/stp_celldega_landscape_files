@@ -13,6 +13,7 @@ EOF
 
 INPUT_JSON=""
 BRANCH="main"  # Default branch if none provided
+ENGINE="WDL"  # Default engine
 
 # Parse named arguments
 while [[ $# -gt 0 ]]; do
@@ -25,6 +26,11 @@ while [[ $# -gt 0 ]]; do
     --branch)
       [[ $# -ge 2 ]] || { echo "Error: --branch requires a value."; show_usage; }
       BRANCH="$2"
+      shift 2
+      ;;
+    --engine)
+      [[ $# -ge 2 ]] || { echo "Error: --engine requires a value."; show_usage; }
+      ENGINE="$2"
       shift 2
       ;;
     -h|--help)
@@ -61,10 +67,10 @@ echo "Cleaning up previous Omics configurations..."
 rm -rf ~/.omics ~/.aws/cli/omics || true
 
 # Extract bucket path from JSON
-output_bucket_path=$(jq -r '."LandscapeFiles.bucket_path_landscape_files"' "$INPUT_JSON")
+output_bucket_path=$(jq -r '."LandscapeFiles.output_dega_files_dir"' "$INPUT_JSON")
 
 if [[ -z "$output_bucket_path" || "$output_bucket_path" == "null" ]]; then
-  echo "Error: Could not read LandscapeFiles.bucket_path_landscape_files from $INPUT_JSON."
+  echo "Error: Could not read LandscapeFiles.output_dega_files_dir from $INPUT_JSON."
   exit 1
 fi
 
@@ -89,7 +95,7 @@ if [[ "$current_branch" != "$BRANCH" ]]; then
 fi
 
 echo "Running Omics workflow from branch '$BRANCH'..."
-omics LandscapeFiles.wdl \
+omics --engine "$ENGINE" LandscapeFiles.wdl \
   --input "$INPUT_JSON" \
   --output-uri "${output_bucket_path%/}/workflow_logs/"
 
