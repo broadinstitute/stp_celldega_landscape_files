@@ -35,7 +35,26 @@ task generate_landscape_files {
       OME_FILE=$(aws s3 ls "${USER_DATA_DIR%/}/results/${SAMPLE}/" | awk '{print $4}' | grep '\.ome\.tiff$' | head -n1)
       aws s3 cp "${USER_DATA_DIR%/}/results/${SAMPLE}/${OME_FILE}" "${IN_DIR}/${SAMPLE}.ome.tiff"
 
-      aws s3 sync "${USER_DATA_DIR%/}/intermediate_results/02_matrix/${SAMPLE}" "${IN_DIR}/"
+      # find and download all directories containing "matrix"
+      mapfile -t MATRIX_DIRS < <(
+        aws s3 ls "${USER_DATA_DIR%/}/intermediate_results/" |
+          awk '$1 == "PRE" {print $2}' |
+          sed 's:/$::' |
+          grep -i 'matrix' || true
+      )
+
+      if [[ "${#MATRIX_DIRS[@]}" -eq 0 ]]; then
+        echo "ERROR: No directory containing 'matrix' found under ${USER_DATA_DIR%/}/intermediate_results/." >&2
+        exit 2
+      fi
+
+      for MATRIX_DIR in "${MATRIX_DIRS[@]}"; do
+        echo "Downloading matrix directory: ${MATRIX_DIR}"
+        aws s3 sync \
+          "${USER_DATA_DIR%/}/intermediate_results/${MATRIX_DIR}/${SAMPLE}" \
+          "${IN_DIR}/"
+      done
+
       aws s3 cp "${USER_DATA_DIR%/}/intermediate_results/stats/sample_prep_stats_sample.csv" "${IN_DIR}/"
 
       # find contour csv
@@ -50,7 +69,26 @@ task generate_landscape_files {
       OME_FILE=$(gcloud storage ls "${USER_DATA_DIR%/}/results/${SAMPLE}/" | grep '\.ome\.tiff$' | head -n1)
       gcloud storage cp "${OME_FILE}" "${IN_DIR}/${SAMPLE}.ome.tiff"
 
-      gcloud storage rsync -r "${USER_DATA_DIR%/}/intermediate_results/02_matrix/${SAMPLE}" "${IN_DIR}/"
+      # find and download all directories containing "matrix"
+      mapfile -t MATRIX_DIRS < <(
+        gcloud storage ls "${USER_DATA_DIR%/}/intermediate_results/" |
+          sed 's:/$::' |
+          awk -F/ '{print $NF}' |
+          grep -i 'matrix' || true
+      )
+
+      if [[ "${#MATRIX_DIRS[@]}" -eq 0 ]]; then
+        echo "ERROR: No directory containing 'matrix' found under ${USER_DATA_DIR%/}/intermediate_results/." >&2
+        exit 2
+      fi
+
+      for MATRIX_DIR in "${MATRIX_DIRS[@]}"; do
+        echo "Downloading matrix directory: ${MATRIX_DIR}"
+        gcloud storage rsync -r \
+          "${USER_DATA_DIR%/}/intermediate_results/${MATRIX_DIR}/${SAMPLE}" \
+          "${IN_DIR}/"
+      done
+
       gcloud storage cp "${USER_DATA_DIR%/}/intermediate_results/stats/sample_prep_stats_sample.csv" "${IN_DIR}/"
 
       # find contour csv
