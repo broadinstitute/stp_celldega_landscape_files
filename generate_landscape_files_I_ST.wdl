@@ -25,136 +25,288 @@ task generate_landscape_files {
     OUTDIR="${DATA_ROOT}/landscape_files_temp"
     IN_DIR="${DATA_ROOT}/${SAMPLE}"
 
-    CELL_BINNED_DIR="${SAMPLE}_cell_binned"
-    LOCAL_CELL_BINNED_DIR="${IN_DIR}/${CELL_BINNED_DIR}"
+    CELL_BINNED_DIR="${IN_DIR}/${SAMPLE}_cell_binned"
+    RAW_DIR="${IN_DIR}/${SAMPLE}_raw"
 
-    mkdir -p "${IN_DIR}" "${OUTDIR}" "${LOCAL_CELL_BINNED_DIR}"
+    mkdir -p \
+      "${IN_DIR}" \
+      "${OUTDIR}" \
+      "${CELL_BINNED_DIR}" \
+      "${RAW_DIR}"
 
     echo "Checking data_dir source: ${USER_DATA_DIR}"
 
     if [[ "${USER_DATA_DIR}" == s3://* ]]; then
-      echo "Detected AWS S3 path, using aws s3..."
+      echo "Detected AWS S3 path."
 
-      # Find and download OME-TIFF.
-      OME_FILE=$(
-        aws s3 ls "${USER_DATA_DIR%/}/results/${SAMPLE}/" |
-          awk '{print $4}' |
-          grep '\.ome\.tiff$' |
-          head -n1
+      # Get the S3 bucket name.
+      S3_BUCKET="${USER_DATA_DIR#s3://}"
+      S3_BUCKET="${S3_BUCKET%%/*}"
+
+      echo "Searching recursively under ${USER_DATA_DIR}..."
+
+      mapfile -t S3_KEYS < <(
+        aws s3 ls "${USER_DATA_DIR%/}/" --recursive |
+          awk '{print $4}'
       )
 
-      if [[ -z "${OME_FILE}" ]]; then
-        echo "ERROR: No OME-TIFF found under ${USER_DATA_DIR%/}/results/${SAMPLE}/" >&2
+      #
+      # Find OME-TIFF
+      #
+      OME_KEY=$(
+        printf '%s\n' "${S3_KEYS[@]}" |
+          grep -F "${SAMPLE}" |
+          grep '\.ome\.tiff$' |
+          head -n1 || true
+      )
+
+      if [[ -z "${OME_KEY}" ]]; then
+        echo "ERROR: Could not find an OME-TIFF for ${SAMPLE}." >&2
         exit 2
       fi
 
+      echo "Found OME-TIFF:"
+      echo "  s3://${S3_BUCKET}/${OME_KEY}"
+
       aws s3 cp \
-        "${USER_DATA_DIR%/}/results/${SAMPLE}/${OME_FILE}" \
+        "s3://${S3_BUCKET}/${OME_KEY}" \
         "${IN_DIR}/${SAMPLE}.ome.tiff"
 
-      # Download the 10x matrix while preserving the directory expected by
-      # IST_Landscape_Pre-process.py.
-      aws s3 sync \
-        "${USER_DATA_DIR%/}/results/${SAMPLE}/${CELL_BINNED_DIR}/" \
-        "${LOCAL_CELL_BINNED_DIR}/" \
-        --no-progress
 
-      aws s3 cp \
-        "${USER_DATA_DIR%/}/intermediate_results/stats/sample_prep_stats_sample.csv" \
-        "${IN_DIR}/"
-
-      # Find and download contour CSV.
-      CSV_FILE=$(
-        aws s3 ls "${USER_DATA_DIR%/}/results/${SAMPLE}/" |
-          awk '{print $4}' |
-          grep '5um_cell_contour_coords\.csv$' |
-          head -n1
+      #
+      # Find sample_prep_stats_sample.csv
+      #
+      STATS_KEY=$(
+        printf '%s\n' "${S3_KEYS[@]}" |
+          grep 'sample_prep_stats_sample\.csv$' |
+          head -n1 || true
       )
 
-      if [[ -z "${CSV_FILE}" ]]; then
-        echo "ERROR: No 5um cell contour CSV found under ${USER_DATA_DIR%/}/results/${SAMPLE}/" >&2
+      if [[ -z "${STATS_KEY}" ]]; then
+        echo "ERROR: Could not find sample_prep_stats_sample.csv." >&2
         exit 2
       fi
 
+      echo "Found sample prep stats:"
+      echo "  s3://${S3_BUCKET}/${STATS_KEY}"
+
       aws s3 cp \
-        "${USER_DATA_DIR%/}/results/${SAMPLE}/${CSV_FILE}" \
+        "s3://${S3_BUCKET}/${STATS_KEY}" \
+        "${IN_DIR}/sample_prep_stats_sample.csv"
+
+
+      #
+      # Find contour CSV
+      #
+      CSV_KEY=$(
+        printf '%s\n' "${S3_KEYS[@]}" |
+          grep -F "${SAMPLE}" |
+          grep '5um_cell_contour_coords\.csv$' |
+          head -n1 || true
+      )
+
+      if [[ -z "${CSV_KEY}" ]]; then
+        echo "ERROR: Could not find 5um cell contour CSV for ${SAMPLE}." >&2
+        exit 2
+      fi
+
+      echo "Found contour CSV:"
+      echo "  s3://${S3_BUCKET}/${CSV_KEY}"
+
+      aws s3 cp \
+        "s3://${S3_BUCKET}/${CSV_KEY}" \
         "${IN_DIR}/${SAMPLE}_Expanded_5um_cell_contour_coords.csv"
 
-    elif [[ "${USER_DATA_DIR}" == gs://* ]]; then
-      echo "Detected Google Cloud Storage path, using gcloud storage..."
 
-      # Find and download OME-TIFF.
+      #
+      # Find directory ending in "_cell_binned"
+      #
+      CELL_BINNED_PREFIX=$(
+        printf '%s\n' "${S3_KEYS[@]}" |
+          grep -F "${SAMPLE}" |
+          sed -n 's#^\(.*[^/]*_cell_binned\)/.*#\1#p' |
+          sort -u |
+          head -n1 || true
+      )
+
+      if [[ -z "${CELL_BINNED_PREFIX}" ]]; then
+        echo "ERROR: Could not find a directory ending in _cell_binned for ${SAMPLE}." >&2
+        exit 2
+      fi
+
+      echo "Found cell-binned directory:"
+      echo "  s3://${S3_BUCKET}/${CELL_BINNED_PREFIX}/"
+
+      aws s3 sync \
+        "s3://${S3_BUCKET}/${CELL_BINNED_PREFIX}/" \
+        "${CELL_BINNED_DIR}/" \
+        --no-progress
+
+
+      #
+      # Find directory ending in "_raw"
+      #
+      RAW_PREFIX=$(
+        printf '%s\n' "${S3_KEYS[@]}" |
+          grep -F "${SAMPLE}" |
+          sed -n 's#^\(.*[^/]*_raw\)/.*#\1#p' |
+          sort -u |
+          head -n1 || true
+      )
+
+      if [[ -z "${RAW_PREFIX}" ]]; then
+        echo "ERROR: Could not find a directory ending in _raw for ${SAMPLE}." >&2
+        exit 2
+      fi
+
+      echo "Found raw directory:"
+      echo "  s3://${S3_BUCKET}/${RAW_PREFIX}/"
+
+      aws s3 sync \
+        "s3://${S3_BUCKET}/${RAW_PREFIX}/" \
+        "${RAW_DIR}/" \
+        --no-progress
+
+
+    elif [[ "${USER_DATA_DIR}" == gs://* ]]; then
+      echo "Detected Google Cloud Storage path."
+
+      echo "Searching recursively under ${USER_DATA_DIR}..."
+
+      mapfile -t GCS_FILES < <(
+        gcloud storage ls \
+          --recursive \
+          "${USER_DATA_DIR%/}/"
+      )
+
+
+      #
+      # Find OME-TIFF
+      #
       OME_FILE=$(
-        gcloud storage ls "${USER_DATA_DIR%/}/results/${SAMPLE}/" |
+        printf '%s\n' "${GCS_FILES[@]}" |
+          grep -F "${SAMPLE}" |
           grep '\.ome\.tiff$' |
-          head -n1
+          head -n1 || true
       )
 
       if [[ -z "${OME_FILE}" ]]; then
-        echo "ERROR: No OME-TIFF found under ${USER_DATA_DIR%/}/results/${SAMPLE}/" >&2
+        echo "ERROR: Could not find an OME-TIFF for ${SAMPLE}." >&2
         exit 2
       fi
+
+      echo "Found OME-TIFF:"
+      echo "  ${OME_FILE}"
 
       gcloud storage cp \
         "${OME_FILE}" \
         "${IN_DIR}/${SAMPLE}.ome.tiff"
 
-      # Download the 10x matrix while preserving the directory expected by
-      # IST_Landscape_Pre-process.py.
-      gcloud storage rsync -r \
-        "${USER_DATA_DIR%/}/results/${SAMPLE}/${CELL_BINNED_DIR}/" \
-        "${LOCAL_CELL_BINNED_DIR}/"
+
+      #
+      # Find sample_prep_stats_sample.csv
+      #
+      STATS_FILE=$(
+        printf '%s\n' "${GCS_FILES[@]}" |
+          grep 'sample_prep_stats_sample\.csv$' |
+          head -n1 || true
+      )
+
+      if [[ -z "${STATS_FILE}" ]]; then
+        echo "ERROR: Could not find sample_prep_stats_sample.csv." >&2
+        exit 2
+      fi
+
+      echo "Found sample prep stats:"
+      echo "  ${STATS_FILE}"
 
       gcloud storage cp \
-        "${USER_DATA_DIR%/}/intermediate_results/stats/sample_prep_stats_sample.csv" \
-        "${IN_DIR}/"
+        "${STATS_FILE}" \
+        "${IN_DIR}/sample_prep_stats_sample.csv"
 
-      # Find and download contour CSV.
+
+      #
+      # Find contour CSV
+      #
       CSV_FILE=$(
-        gcloud storage ls "${USER_DATA_DIR%/}/results/${SAMPLE}/" |
+        printf '%s\n' "${GCS_FILES[@]}" |
+          grep -F "${SAMPLE}" |
           grep '5um_cell_contour_coords\.csv$' |
-          head -n1
+          head -n1 || true
       )
 
       if [[ -z "${CSV_FILE}" ]]; then
-        echo "ERROR: No 5um cell contour CSV found under ${USER_DATA_DIR%/}/results/${SAMPLE}/" >&2
+        echo "ERROR: Could not find 5um cell contour CSV for ${SAMPLE}." >&2
         exit 2
       fi
+
+      echo "Found contour CSV:"
+      echo "  ${CSV_FILE}"
 
       gcloud storage cp \
         "${CSV_FILE}" \
         "${IN_DIR}/${SAMPLE}_Expanded_5um_cell_contour_coords.csv"
+
+
+      #
+      # Find directory ending in "_cell_binned"
+      #
+      CELL_BINNED_SOURCE=$(
+        printf '%s\n' "${GCS_FILES[@]}" |
+          grep -F "${SAMPLE}" |
+          sed -n 's#^\(gs://.*[^/]*_cell_binned\)/.*#\1#p' |
+          sort -u |
+          head -n1 || true
+      )
+
+      if [[ -z "${CELL_BINNED_SOURCE}" ]]; then
+        echo "ERROR: Could not find a directory ending in _cell_binned for ${SAMPLE}." >&2
+        exit 2
+      fi
+
+      echo "Found cell-binned directory:"
+      echo "  ${CELL_BINNED_SOURCE}/"
+
+      gcloud storage rsync -r \
+        "${CELL_BINNED_SOURCE}/" \
+        "${CELL_BINNED_DIR}/"
+
+
+      #
+      # Find directory ending in "_raw"
+      #
+      RAW_SOURCE=$(
+        printf '%s\n' "${GCS_FILES[@]}" |
+          grep -F "${SAMPLE}" |
+          sed -n 's#^\(gs://.*[^/]*_raw\)/.*#\1#p' |
+          sort -u |
+          head -n1 || true
+      )
+
+      if [[ -z "${RAW_SOURCE}" ]]; then
+        echo "ERROR: Could not find a directory ending in _raw for ${SAMPLE}." >&2
+        exit 2
+      fi
+
+      echo "Found raw directory:"
+      echo "  ${RAW_SOURCE}/"
+
+      gcloud storage rsync -r \
+        "${RAW_SOURCE}/" \
+        "${RAW_DIR}/"
 
     else
       echo "ERROR: data_dir must start with s3:// or gs://" >&2
       exit 1
     fi
 
-    # Validate the files required by scanpy.read_10x_mtx().
-    MATRIX_PATH="${LOCAL_CELL_BINNED_DIR}/matrix.mtx.gz"
-    FEATURES_PATH="${LOCAL_CELL_BINNED_DIR}/features.tsv.gz"
-    BARCODES_PATH="${LOCAL_CELL_BINNED_DIR}/barcodes.tsv.gz"
 
-    if [[ ! -f "${MATRIX_PATH}" ]]; then
-      echo "ERROR: Missing matrix file: ${MATRIX_PATH}" >&2
-      find "${IN_DIR}" -maxdepth 3 -type f -print >&2
-      exit 2
-    fi
-
-    if [[ ! -f "${FEATURES_PATH}" ]]; then
-      echo "ERROR: Missing features file: ${FEATURES_PATH}" >&2
-      find "${IN_DIR}" -maxdepth 3 -type f -print >&2
-      exit 2
-    fi
-
-    if [[ ! -f "${BARCODES_PATH}" ]]; then
-      echo "ERROR: Missing barcodes file: ${BARCODES_PATH}" >&2
-      find "${IN_DIR}" -maxdepth 3 -type f -print >&2
-      exit 2
-    fi
-
+    #
+    # Show exactly what was downloaded.
+    #
     echo "Downloaded input files:"
-    find "${IN_DIR}" -maxdepth 3 -type f -print
+    find "${IN_DIR}" -type f -print
+
 
     echo "Running celldega..."
 
@@ -165,6 +317,7 @@ task generate_landscape_files {
       --tile_size ~{tile_size} \
       --image_scale ~{image_scale} \
       --jitter ~{jitter}
+
 
     echo "Syncing outputs back to bucket..."
 

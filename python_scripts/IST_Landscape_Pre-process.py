@@ -10,7 +10,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import polars as pl
-import scanpy as sc
 import tifffile
 from matplotlib.colors import to_hex
 from scipy.sparse import coo_matrix
@@ -183,7 +182,9 @@ def main(
     cells.index = "cell" + cells.index.astype(str)
 
     clusters = pd.DataFrame(index=gdf_cells.index.tolist())
-    clusters["cluster"] = pd.Series(0, index=gdf_cells.index.tolist())
+    clusters["cluster"] = pd.Series(
+        "0", index=gdf_cells.index.tolist(), dtype="string"
+    )
 
     cell_clusters_dir = path_landscape_files + "/cell_clusters"
     os.makedirs(cell_clusters_dir, exist_ok=True)
@@ -197,7 +198,7 @@ def main(
     gdf_cells_copy["geometry"] = gdf_cells_copy.apply(lambda row: [row["center_x"], row["center_y"]], axis=1)
 
     gdf_cells_copy[["name", "geometry"]].to_parquet(
-        path_landscape_files + "/cell_metadata.parquet"
+        path_landscape_files + "/cell_metadata.parquet", index=False
     )
 
     cell_str_to_int_mapping = dega.pre.boundary_tile._get_name_mapping(
@@ -237,17 +238,23 @@ def main(
 
             filename = f"{cell_segmentation_dir}/cell_tile_{i}_{j}.parquet"
             if inst_geo.shape[0] > 0:
-                inst_geo[["GEOMETRY", "name"]].to_parquet(filename)
+                inst_geo["GEOMETRY"] = inst_geo["GEOMETRY"].apply(
+                    dega.pre._round_nested_coord_list
+                )
+                inst_geo[["GEOMETRY", "name"]].to_parquet(filename, index=False)
 
     print("Processing Genes...")
 
     # Meta Gene
-    adata_cell = sc.read_10x_mtx(
+    features = pd.read_csv(
         f"{data_dir}/"
-        f"{sample}/{sample}_cell_binned/"
+        f"{sample}/{sample}_cell_binned/features.tsv.gz",
+        sep="\t",
+        header=None,
+        compression="gzip",
     )
 
-    list_genes = adata_cell.var.index.tolist()
+    list_genes = features[1].tolist()
     meta_gene = pd.DataFrame(index=list_genes)
 
     palettes = [plt.get_cmap(name).colors for name in plt.colormaps() if "tab" in name]
@@ -290,6 +297,7 @@ def main(
         ],
         "image_format": ".webp",
         "use_int_index": True,
+        "use_row_groups": False,
     }
 
     with open(path_landscape_files + "/landscape_parameters.json", "w") as f:

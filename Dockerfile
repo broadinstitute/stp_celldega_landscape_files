@@ -54,22 +54,34 @@ RUN set -eux; \
 RUN gcloud --version && gsutil version -l && aws --version
 
 # --- Python dependencies ---
-ARG CELLDEGA_REF=main
+# Celldega version. Empty (the default) installs the latest release from PyPI.
+# Set it to pin a reproducible build, e.g. --build-arg CELLDEGA_VERSION=0.24.1
+ARG CELLDEGA_VERSION=
 
-RUN pip install --upgrade pip && \
+# Docker caches the layer below, so an unchanged Dockerfile will reuse whatever
+# celldega was latest when the image was FIRST built. Vary this to force pip to
+# re-resolve, e.g. --build-arg CACHEBUST=$(date +%s)
+ARG CACHEBUST=0
+
+# pyvips is needed by _convert_to_png / make_deepzoom_pyramid. It is optional in
+# celldega (celldega.pre imports it as None if absent), so install it explicitly.
+# The ~=2.2.2 bound mirrors celldega's own [pre] extra -- keep the two in sync.
+# geopandas, matplotlib, numpy, pandas, polars, tifffile, scipy and shapely are
+# already celldega runtime deps, so they are resolved with celldega's own pins
+# (e.g. numpy>=2, shapely>=2.0,<2.2) rather than floating free.
+RUN echo "cachebust=${CACHEBUST}" && \
+    pip install --upgrade pip && \
     pip install --no-cache-dir \
-      "git+https://github.com/broadinstitute/celldega.git@${CELLDEGA_REF}" \
-      pyvips \
-      fiona \
-      geopandas \
-      matplotlib \
-      numpy \
-      pandas \
-      polars \
-      scanpy \
-      tifffile \
-      scipy \
-      shapely
+      "celldega${CELLDEGA_VERSION:+==${CELLDEGA_VERSION}}" \
+      "pyvips~=2.2.2"
+
+# --- Verify celldega ---
+# celldega.pre swallows a failed pyvips import and sets pyvips = None, which would
+# otherwise surface much later as "'NoneType' object has no attribute 'Image'" at
+# the first image step. Fail the build here instead.
+RUN python -c "import celldega, celldega.pre as pre, pyvips; \
+    assert pre.pyvips is not None, 'pyvips did not load (check libvips and the pyvips pin)'; \
+    print('celldega', celldega.__version__, '| pyvips', pyvips.__version__)"
 
 # --- Copy Python scripts ---
 WORKDIR /opt
