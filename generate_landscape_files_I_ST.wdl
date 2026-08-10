@@ -34,6 +34,45 @@ task generate_landscape_files {
       "${CELL_BINNED_DIR}" \
       "${RAW_DIR}"
 
+    # The python script reads a 10x-style matrix out of each of these
+    # directories, so a candidate is only usable if it holds all three files.
+    REQUIRED_MATRIX_FILES=(barcodes.tsv.gz features.tsv.gz matrix.mtx.gz)
+
+    # Recursive listing of the source, written once per cloud below.
+    LISTING_FILE="${DATA_ROOT}/_recursive_listing.txt"
+
+    # Echo the first directory path ending in $1 that contains every one of
+    # REQUIRED_MATRIX_FILES directly inside it. Candidates that are missing any
+    # of them are skipped instead of being synced, which is what happened
+    # previously whenever the first matching directory was an empty or partial
+    # one. Echoes nothing if no candidate qualifies.
+    select_matrix_dir() {
+      local suffix="$1"
+      local candidate f missing
+
+      while IFS= read -r candidate; do
+        [[ -n "${candidate}" ]] || continue
+
+        missing=0
+        for f in "${REQUIRED_MATRIX_FILES[@]}"; do
+          grep -qF "${candidate}/${f}" "${LISTING_FILE}" || { missing=1; break; }
+        done
+
+        if [[ "${missing}" -eq 0 ]]; then
+          printf '%s\n' "${candidate}"
+          return 0
+        fi
+
+        echo "  skipping ${candidate} (missing ${f})" >&2
+      done < <(
+        grep -F "${SAMPLE}" "${LISTING_FILE}" |
+          sed -n "s#^\(.*[^/]*${suffix}\)/.*#\1#p" |
+          sort -u
+      )
+
+      return 0
+    }
+
     echo "Checking data_dir source: ${USER_DATA_DIR}"
 
     if [[ "${USER_DATA_DIR}" == s3://* ]]; then
@@ -49,6 +88,8 @@ task generate_landscape_files {
         aws s3 ls "${USER_DATA_DIR%/}/" --recursive |
           awk '{print $4}'
       )
+
+      printf '%s\n' "${S3_KEYS[@]}" > "${LISTING_FILE}"
 
       #
       # Find OME-TIFF
@@ -121,16 +162,10 @@ task generate_landscape_files {
       #
       # Find directory ending in "_cell_binned"
       #
-      CELL_BINNED_PREFIX=$(
-        printf '%s\n' "${S3_KEYS[@]}" |
-          grep -F "${SAMPLE}" |
-          sed -n 's#^\(.*[^/]*_cell_binned\)/.*#\1#p' |
-          sort -u |
-          head -n1 || true
-      )
+      CELL_BINNED_PREFIX=$(select_matrix_dir '_cell_binned')
 
       if [[ -z "${CELL_BINNED_PREFIX}" ]]; then
-        echo "ERROR: Could not find a directory ending in _cell_binned for ${SAMPLE}." >&2
+        echo "ERROR: Could not find a _cell_binned directory for ${SAMPLE} containing ${REQUIRED_MATRIX_FILES[*]}." >&2
         exit 2
       fi
 
@@ -146,16 +181,10 @@ task generate_landscape_files {
       #
       # Find directory ending in "_raw"
       #
-      RAW_PREFIX=$(
-        printf '%s\n' "${S3_KEYS[@]}" |
-          grep -F "${SAMPLE}" |
-          sed -n 's#^\(.*[^/]*_raw\)/.*#\1#p' |
-          sort -u |
-          head -n1 || true
-      )
+      RAW_PREFIX=$(select_matrix_dir '_raw')
 
       if [[ -z "${RAW_PREFIX}" ]]; then
-        echo "ERROR: Could not find a directory ending in _raw for ${SAMPLE}." >&2
+        echo "ERROR: Could not find a _raw directory for ${SAMPLE} containing ${REQUIRED_MATRIX_FILES[*]}." >&2
         exit 2
       fi
 
@@ -178,6 +207,8 @@ task generate_landscape_files {
           --recursive \
           "${USER_DATA_DIR%/}/"
       )
+
+      printf '%s\n' "${GCS_FILES[@]}" > "${LISTING_FILE}"
 
 
       #
@@ -251,16 +282,10 @@ task generate_landscape_files {
       #
       # Find directory ending in "_cell_binned"
       #
-      CELL_BINNED_SOURCE=$(
-        printf '%s\n' "${GCS_FILES[@]}" |
-          grep -F "${SAMPLE}" |
-          sed -n 's#^\(gs://.*[^/]*_cell_binned\)/.*#\1#p' |
-          sort -u |
-          head -n1 || true
-      )
+      CELL_BINNED_SOURCE=$(select_matrix_dir '_cell_binned')
 
       if [[ -z "${CELL_BINNED_SOURCE}" ]]; then
-        echo "ERROR: Could not find a directory ending in _cell_binned for ${SAMPLE}." >&2
+        echo "ERROR: Could not find a _cell_binned directory for ${SAMPLE} containing ${REQUIRED_MATRIX_FILES[*]}." >&2
         exit 2
       fi
 
@@ -275,16 +300,10 @@ task generate_landscape_files {
       #
       # Find directory ending in "_raw"
       #
-      RAW_SOURCE=$(
-        printf '%s\n' "${GCS_FILES[@]}" |
-          grep -F "${SAMPLE}" |
-          sed -n 's#^\(gs://.*[^/]*_raw\)/.*#\1#p' |
-          sort -u |
-          head -n1 || true
-      )
+      RAW_SOURCE=$(select_matrix_dir '_raw')
 
       if [[ -z "${RAW_SOURCE}" ]]; then
-        echo "ERROR: Could not find a directory ending in _raw for ${SAMPLE}." >&2
+        echo "ERROR: Could not find a _raw directory for ${SAMPLE} containing ${REQUIRED_MATRIX_FILES[*]}." >&2
         exit 2
       fi
 
