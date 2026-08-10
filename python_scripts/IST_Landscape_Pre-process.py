@@ -349,7 +349,6 @@ def main(
     tmp = [x.split(":") for x in coords]
     tmp = [[x for x in row if is_numeric_field(x)] for row in tmp]
     df_tmp = pd.DataFrame(tmp, dtype=float)
-    df_tmp = df_tmp / 1000
     df_tmp.columns = ["y", "x"]
 
     df_tmp["x"] = (df_tmp["x"] - gc.loc[sample, "Global_left"]) * high_res_scale
