@@ -67,6 +67,15 @@ def main(
         df.columns = new_cols
         return df
 
+    def is_numeric_field(value):
+        # Barcode coordinates may be integers ("cell1:12200:38104") or decimals
+        # ("SBC:1323.506:44874.962"), so str.isdigit() is not enough.
+        try:
+            float(value)
+        except ValueError:
+            return False
+        return True
+
     print(f"Celldega version: {dega.__version__}")
 
     image_tile_layer = "h&e"
@@ -338,7 +347,7 @@ def main(
 
     coords = sbg.index.tolist()
     tmp = [x.split(":") for x in coords]
-    tmp = [[x for x in row if x.isdigit()] for row in tmp]
+    tmp = [[x for x in row if is_numeric_field(x)] for row in tmp]
     df_tmp = pd.DataFrame(tmp, dtype=float)
     df_tmp = df_tmp / 1000
     df_tmp.columns = ["y", "x"]
