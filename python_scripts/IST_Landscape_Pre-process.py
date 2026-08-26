@@ -156,8 +156,6 @@ def main(
     # clusters.to_parquet(f"{cell_clusters_dir}/cluster.parquet")
 
     # Segmented Cells
-    tile_bounds = {"x_min": 0, "x_max": 55000, "y_min": 0, "y_max": 55000}
-
     poly = pd.read_csv(
         f"{data_dir}/{sample}/"
         f"{sample}_Expanded_5um_cell_contour_coords.csv"
@@ -184,6 +182,14 @@ def main(
     gdf_cells["center_x"] = gdf_cells.centroid.x
     gdf_cells["center_y"] = gdf_cells.centroid.y
 
+    # Set cell tile bounds dynamically from cell centers
+    tile_bounds = {
+        "x_min": 0,
+        "x_max": int(np.ceil(gdf_cells["center_x"].max() / tile_size) * tile_size),
+        "y_min": 0,
+        "y_max": int(np.ceil(gdf_cells["center_y"].max() / tile_size) * tile_size),
+    }
+
     cell_segmentation_dir = path_landscape_files + "/cell_segmentation"
     os.makedirs(cell_segmentation_dir, exist_ok=True)
 
@@ -204,7 +210,9 @@ def main(
     gdf_cells_copy.reset_index(inplace=True)
     gdf_cells_copy.rename(columns={"cell_id":"name"}, inplace=True)
 
-    gdf_cells_copy["geometry"] = gdf_cells_copy.apply(lambda row: [row["center_x"], row["center_y"]], axis=1)
+    gdf_cells_copy["geometry"] = gdf_cells_copy.apply(
+        lambda row: [row["center_x"], row["center_y"]], axis=1
+    )
 
     gdf_cells_copy[["name", "geometry"]].to_parquet(
         path_landscape_files + "/cell_metadata.parquet", index=False
@@ -349,6 +357,10 @@ def main(
     tmp = [x.split(":") for x in coords]
     tmp = [[x for x in row if is_numeric_field(x)] for row in tmp]
     df_tmp = pd.DataFrame(tmp, dtype=float)
+
+    # Convert transcript coordinates from nm to µm
+    df_tmp = df_tmp / 1000
+
     df_tmp.columns = ["y", "x"]
 
     df_tmp["x"] = (df_tmp["x"] - gc.loc[sample, "Global_left"]) * high_res_scale
@@ -359,7 +371,14 @@ def main(
         path_landscape_files, layer="transcript"
     )
 
-    tile_bounds = {"x_min": 0, "x_max": 55000, "y_min": 0, "y_max": 55000}
+    # Set transcript bounds dynamically from the transformed coordinates
+    tile_bounds = {
+        "x_min": 0,
+        "x_max": int(np.ceil(spots["x"].max() / tile_size) * tile_size),
+        "y_min": 0,
+        "y_max": int(np.ceil(spots["y"].max() / tile_size) * tile_size),
+    }
+
     n_tiles_x = int(np.ceil((tile_bounds["x_max"] - tile_bounds["x_min"]) / tile_size))
     n_tiles_y = int(np.ceil((tile_bounds["y_max"] - tile_bounds["y_min"]) / tile_size))
 
