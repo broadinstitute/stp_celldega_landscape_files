@@ -17,6 +17,7 @@ from shapely.geometry import Polygon
 
 import xml.etree.ElementTree as ET
 
+
 def main(
     data_dir,
     sample,
@@ -42,7 +43,9 @@ def main(
 
     def transform_polygon(polygon):
         exterior_coords = polygon.exterior.coords
-        original_format_coords = np.array([np.array(coord) for coord in exterior_coords])
+        original_format_coords = np.array(
+            [np.array(coord) for coord in exterior_coords]
+        )
         return np.array([original_format_coords], dtype=object)
 
     def make_column_names_unique_fast(df):
@@ -96,15 +99,23 @@ def main(
         image_data = series.asarray()
         root = ET.fromstring(tif.ome_metadata)
 
-        pixels = root.find(".//{*}Image[@ID='Image:RegImage_20x_pyramid']/{*}Pixels")
+        pixels = root.find(
+            ".//{*}Image[@ID='Image:RegImage_20x_pyramid']/{*}Pixels"
+        )
         scaling_factor = float(pixels.attrib["PhysicalSizeX"]) / 1000
 
     high_res_scale = 1 / scaling_factor
 
     tifffile.imwrite(
-        path_landscape_files + "/output_regular.tif", image_data, compression=None
+        path_landscape_files + "/output_regular.tif",
+        image_data,
+        compression=None,
     )
-    image_png = dega.pre._convert_to_png(path_landscape_files + "/output_regular.tif")
+
+    image_png = dega.pre._convert_to_png(
+        path_landscape_files + "/output_regular.tif"
+    )
+
     dega.pre.make_deepzoom_pyramid(
         image_png,
         path_landscape_files + "/pyramid_images/",
@@ -161,85 +172,200 @@ def main(
         f"{sample}_Expanded_5um_cell_contour_coords.csv"
     )
 
-    poly["vertex_x"] = (poly["vertex_x"] - gc.loc[sample, "Global_left"]) * (
-        high_res_scale
-    )
-    poly["vertex_y"] = (poly["vertex_y"] - gc.loc[sample, "Global_top"]) * (
-        high_res_scale
-    )
+    # Check whether cell coordinates need nm -> µm conversion
+    raw_cell_x = poly["vertex_x"]
+    raw_cell_y = poly["vertex_y"]
+
+    if (
+        raw_cell_x.median() > gc.loc[sample, "Global_left"] * 100
+        or raw_cell_y.median() > gc.loc[sample, "Global_top"] * 100
+    ):
+        print("Detected nm-scale cell coordinates; converting to µm")
+        poly["vertex_x"] = poly["vertex_x"] / 1000
+        poly["vertex_y"] = poly["vertex_y"] / 1000
+    else:
+        print("Cell coordinates already appear to be in µm; no conversion applied")
+
+    poly["vertex_x"] = (
+        poly["vertex_x"] - gc.loc[sample, "Global_left"]
+    ) * high_res_scale
+
+    poly["vertex_y"] = (
+        poly["vertex_y"] - gc.loc[sample, "Global_top"]
+    ) * high_res_scale
 
     grouped = poly.groupby("cell_id").agg(list)
     grouped["geometry"] = grouped.apply(safe_polygon, axis=1)
 
-    cells = gpd.GeoDataFrame(grouped, geometry="geometry")[["geometry"]]
-    cells["NEW_GEOMETRY"] = cells["geometry"].apply(lambda poly: transform_polygon(poly))
+    cells = gpd.GeoDataFrame(
+        grouped,
+        geometry="geometry",
+    )[["geometry"]]
+
+    cells["NEW_GEOMETRY"] = cells["geometry"].apply(
+        lambda poly: transform_polygon(poly)
+    )
+
     cells["GEOMETRY"] = cells["NEW_GEOMETRY"].apply(
         lambda x: simple_format(x, image_scale)
     )
-    cells["polygon"] = cells["GEOMETRY"].apply(lambda x: Polygon(x[0]))
 
-    gdf_cells = gpd.GeoDataFrame(geometry=cells["polygon"])
+    cells["polygon"] = cells["GEOMETRY"].apply(
+        lambda x: Polygon(x[0])
+    )
+
+    gdf_cells = gpd.GeoDataFrame(
+        geometry=cells["polygon"]
+    )
+
     gdf_cells["center_x"] = gdf_cells.centroid.x
     gdf_cells["center_y"] = gdf_cells.centroid.y
 
-    # Set cell tile bounds dynamically from cell centers
+    # Dynamic cell tile bounds
     tile_bounds = {
-        "x_min": 0,
-        "x_max": int(np.ceil(gdf_cells["center_x"].max() / tile_size) * tile_size),
-        "y_min": 0,
-        "y_max": int(np.ceil(gdf_cells["center_y"].max() / tile_size) * tile_size),
+        "x_min": int(
+            np.floor(gdf_cells["center_x"].min() / tile_size) * tile_size
+        ),
+        "x_max": int(
+            np.ceil(gdf_cells["center_x"].max() / tile_size) * tile_size
+        ),
+        "y_min": int(
+            np.floor(gdf_cells["center_y"].min() / tile_size) * tile_size
+        ),
+        "y_max": int(
+            np.ceil(gdf_cells["center_y"].max() / tile_size) * tile_size
+        ),
     }
 
-    cell_segmentation_dir = path_landscape_files + "/cell_segmentation"
-    os.makedirs(cell_segmentation_dir, exist_ok=True)
+    print("Cell tile bounds:", tile_bounds)
 
-    gdf_cells.index = "cell" + gdf_cells.index.astype(str)
-    cells.index = "cell" + cells.index.astype(str)
-
-    clusters = pd.DataFrame(index=gdf_cells.index.tolist())
-    clusters["cluster"] = pd.Series(
-        "0", index=gdf_cells.index.tolist(), dtype="string"
+    cell_segmentation_dir = (
+        path_landscape_files + "/cell_segmentation"
     )
 
-    cell_clusters_dir = path_landscape_files + "/cell_clusters"
-    os.makedirs(cell_clusters_dir, exist_ok=True)
-    clusters.to_parquet(f"{cell_clusters_dir}/cluster.parquet")
+    os.makedirs(
+        cell_segmentation_dir,
+        exist_ok=True,
+    )
+
+    gdf_cells.index = (
+        "cell" + gdf_cells.index.astype(str)
+    )
+
+    cells.index = (
+        "cell" + cells.index.astype(str)
+    )
+
+    clusters = pd.DataFrame(
+        index=gdf_cells.index.tolist()
+    )
+
+    clusters["cluster"] = pd.Series(
+        "0",
+        index=gdf_cells.index.tolist(),
+        dtype="string",
+    )
+
+    cell_clusters_dir = (
+        path_landscape_files + "/cell_clusters"
+    )
+
+    os.makedirs(
+        cell_clusters_dir,
+        exist_ok=True,
+    )
+
+    clusters.to_parquet(
+        f"{cell_clusters_dir}/cluster.parquet"
+    )
 
     gdf_cells_copy = gdf_cells.copy()
 
-    gdf_cells_copy.reset_index(inplace=True)
-    gdf_cells_copy.rename(columns={"cell_id":"name"}, inplace=True)
+    gdf_cells_copy.reset_index(
+        inplace=True
+    )
+
+    gdf_cells_copy.rename(
+        columns={"cell_id": "name"},
+        inplace=True,
+    )
 
     gdf_cells_copy["geometry"] = gdf_cells_copy.apply(
-        lambda row: [row["center_x"], row["center_y"]], axis=1
+        lambda row: [
+            row["center_x"],
+            row["center_y"],
+        ],
+        axis=1,
     )
 
-    gdf_cells_copy[["name", "geometry"]].to_parquet(
-        path_landscape_files + "/cell_metadata.parquet", index=False
+    gdf_cells_copy[
+        ["name", "geometry"]
+    ].to_parquet(
+        path_landscape_files + "/cell_metadata.parquet",
+        index=False,
     )
 
-    cell_str_to_int_mapping = dega.pre.boundary_tile._get_name_mapping(
-        path_landscape_files, layer="boundary", segmentation="default"
+    cell_str_to_int_mapping = (
+        dega.pre.boundary_tile._get_name_mapping(
+            path_landscape_files,
+            layer="boundary",
+            segmentation="default",
+        )
     )
 
-    gdf_cells.index = gdf_cells.index.astype(str).map(cell_str_to_int_mapping)
-    cells.index = cells.index.astype(str).map(cell_str_to_int_mapping)
+    gdf_cells.index = (
+        gdf_cells.index
+        .astype(str)
+        .map(cell_str_to_int_mapping)
+    )
+
+    cells.index = (
+        cells.index
+        .astype(str)
+        .map(cell_str_to_int_mapping)
+    )
 
     tile_size_x = tile_size
     tile_size_y = tile_size
 
-    n_tiles_x = int(np.ceil((tile_bounds["x_max"] - tile_bounds["x_min"]) / tile_size_x))
-    n_tiles_y = int(np.ceil((tile_bounds["y_max"] - tile_bounds["y_min"]) / tile_size_y))
+    n_tiles_x = int(
+        np.ceil(
+            (tile_bounds["x_max"] - tile_bounds["x_min"])
+            / tile_size_x
+        )
+    )
+
+    n_tiles_y = int(
+        np.ceil(
+            (tile_bounds["y_max"] - tile_bounds["y_min"])
+            / tile_size_y
+        )
+    )
 
     for i in range(n_tiles_x):
         if i % 2 == 0:
             print("row", i)
 
         for j in range(n_tiles_y):
-            tile_x_min = tile_bounds["x_min"] + i * tile_size_x
-            tile_x_max = tile_x_min + tile_size_x
-            tile_y_min = tile_bounds["y_min"] + j * tile_size_y
-            tile_y_max = tile_y_min + tile_size_y
+            tile_x_min = (
+                tile_bounds["x_min"]
+                + i * tile_size_x
+            )
+
+            tile_x_max = (
+                tile_x_min
+                + tile_size_x
+            )
+
+            tile_y_min = (
+                tile_bounds["y_min"]
+                + j * tile_size_y
+            )
+
+            tile_y_max = (
+                tile_y_min
+                + tile_size_y
+            )
 
             keep_cells = gdf_cells[
                 (gdf_cells.center_x >= tile_x_min)
@@ -248,17 +374,34 @@ def main(
                 & (gdf_cells.center_y < tile_y_max)
             ].index.tolist()
 
-            inst_geo = cells.loc[keep_cells, ["GEOMETRY"]]
+            inst_geo = cells.loc[
+                keep_cells,
+                ["GEOMETRY"],
+            ]
+
             inst_geo["name"] = pd.Series(
-                inst_geo.index.tolist(), index=inst_geo.index.tolist()
+                inst_geo.index.tolist(),
+                index=inst_geo.index.tolist(),
             )
 
-            filename = f"{cell_segmentation_dir}/cell_tile_{i}_{j}.parquet"
+            filename = (
+                f"{cell_segmentation_dir}/"
+                f"cell_tile_{i}_{j}.parquet"
+            )
+
             if inst_geo.shape[0] > 0:
-                inst_geo["GEOMETRY"] = inst_geo["GEOMETRY"].apply(
-                    dega.pre._round_nested_coord_list
+                inst_geo["GEOMETRY"] = (
+                    inst_geo["GEOMETRY"].apply(
+                        dega.pre._round_nested_coord_list
+                    )
                 )
-                inst_geo[["GEOMETRY", "name"]].to_parquet(filename, index=False)
+
+                inst_geo[
+                    ["GEOMETRY", "name"]
+                ].to_parquet(
+                    filename,
+                    index=False,
+                )
 
     print("Processing Genes...")
 
@@ -274,30 +417,70 @@ def main(
     list_genes = features[1].tolist()
     meta_gene = pd.DataFrame(index=list_genes)
 
-    palettes = [plt.get_cmap(name).colors for name in plt.colormaps() if "tab" in name]
-    flat_colors = [color for palette in palettes for color in palette]
-    flat_colors_hex = [to_hex(color) for color in flat_colors]
+    palettes = [
+        plt.get_cmap(name).colors
+        for name in plt.colormaps()
+        if "tab" in name
+    ]
+
+    flat_colors = [
+        color
+        for palette in palettes
+        for color in palette
+    ]
+
+    flat_colors_hex = [
+        to_hex(color)
+        for color in flat_colors
+    ]
 
     colors = [
-        flat_colors_hex[i % len(flat_colors_hex)] if "Blank" not in gene else "#FFFFFF"
+        (
+            flat_colors_hex[i % len(flat_colors_hex)]
+            if "Blank" not in gene
+            else "#FFFFFF"
+        )
         for i, gene in enumerate(list_genes)
     ]
 
-    ser_color = pd.Series(colors, index=list_genes)
+    ser_color = pd.Series(
+        colors,
+        index=list_genes,
+    )
 
-    meta_gene["mean"] = pd.Series(100, index=list_genes)
-    meta_gene["std"] = pd.Series(10, index=list_genes)
-    meta_gene["max"] = pd.Series(100, index=list_genes)
-    meta_gene["non-zero"] = pd.Series(0.5, index=list_genes)
+    meta_gene["mean"] = pd.Series(
+        100,
+        index=list_genes,
+    )
+
+    meta_gene["std"] = pd.Series(
+        10,
+        index=list_genes,
+    )
+
+    meta_gene["max"] = pd.Series(
+        100,
+        index=list_genes,
+    )
+
+    meta_gene["non-zero"] = pd.Series(
+        0.5,
+        index=list_genes,
+    )
+
     meta_gene["color"] = ser_color
 
-    meta_gene.to_parquet(path_landscape_files + "/meta_gene.parquet")
+    meta_gene.to_parquet(
+        path_landscape_files + "/meta_gene.parquet"
+    )
 
     print("Saving Landscape Parameters...")
 
-    # Save Landscape Parameters
-    max_pyramid_zoom = dega.pre.get_max_zoom_level(
-        path_landscape_files + f"/pyramid_images/{image_tile_layer}_files"
+    max_pyramid_zoom = (
+        dega.pre.get_max_zoom_level(
+            path_landscape_files
+            + f"/pyramid_images/{image_tile_layer}_files"
+        )
     )
 
     landscape_parameters = {
@@ -317,16 +500,33 @@ def main(
         "use_row_groups": False,
     }
 
-    with open(path_landscape_files + "/landscape_parameters.json", "w") as f:
-        json.dump(landscape_parameters, f, indent=2)
+    with open(
+        path_landscape_files + "/landscape_parameters.json",
+        "w",
+    ) as f:
+        json.dump(
+            landscape_parameters,
+            f,
+            indent=2,
+        )
 
     print("Saving Clusters...")
 
-    # Meta Cluster
     meta_cluster = pd.DataFrame()
-    meta_cluster.loc["0", "color"] = "#ff7f0e"
-    meta_cluster.loc["0", "count"] = 1000
-    meta_cluster.to_parquet(cell_clusters_dir + "/meta_cluster.parquet")
+
+    meta_cluster.loc[
+        "0",
+        "color",
+    ] = "#ff7f0e"
+
+    meta_cluster.loc[
+        "0",
+        "count",
+    ] = 1000
+
+    meta_cluster.to_parquet(
+        cell_clusters_dir + "/meta_cluster.parquet"
+    )
 
     print("Processing CBG...")
 
@@ -335,12 +535,32 @@ def main(
         f"{data_dir}/"
         f"{sample}/{sample}_cell_binned/"
     )
-    cbg = dega.pre.read_cbg_mtx(path_cbg, technology="IST")
-    cbg.index = [x.split(":")[0] for x in cbg.index.tolist()]
-    cbg = make_column_names_unique_fast(cbg)
 
-    dega.pre.make_meta_gene(cbg, path_landscape_files + "/meta_gene.parquet")
-    dega.pre.save_cbg_gene_parquets("IST", path_landscape_files, cbg, verbose=True)
+    cbg = dega.pre.read_cbg_mtx(
+        path_cbg,
+        technology="IST",
+    )
+
+    cbg.index = [
+        x.split(":")[0]
+        for x in cbg.index.tolist()
+    ]
+
+    cbg = make_column_names_unique_fast(
+        cbg
+    )
+
+    dega.pre.make_meta_gene(
+        cbg,
+        path_landscape_files + "/meta_gene.parquet",
+    )
+
+    dega.pre.save_cbg_gene_parquets(
+        "IST",
+        path_landscape_files,
+        cbg,
+        verbose=True,
+    )
 
     print("Processing Jittered Transcripts...")
 
@@ -354,41 +574,128 @@ def main(
     )
 
     coords = sbg.index.tolist()
-    tmp = [x.split(":") for x in coords]
-    tmp = [[x for x in row if is_numeric_field(x)] for row in tmp]
-    df_tmp = pd.DataFrame(tmp, dtype=float)
 
-    # Convert transcript coordinates from nm to µm
-    df_tmp = df_tmp / 1000
+    tmp = [
+        x.split(":")
+        for x in coords
+    ]
 
-    df_tmp.columns = ["y", "x"]
+    tmp = [
+        [
+            x
+            for x in row
+            if is_numeric_field(x)
+        ]
+        for row in tmp
+    ]
 
-    df_tmp["x"] = (df_tmp["x"] - gc.loc[sample, "Global_left"]) * high_res_scale
-    df_tmp["y"] = (df_tmp["y"] - gc.loc[sample, "Global_top"]) * high_res_scale
-
-    spots = df_tmp
-    gene_str_to_int = dega.pre.boundary_tile._get_name_mapping(
-        path_landscape_files, layer="transcript"
+    df_tmp = pd.DataFrame(
+        tmp,
+        dtype=float,
     )
 
-    # Set transcript bounds dynamically from the transformed coordinates
+    # Check whether transcript coordinates need nm -> µm conversion
+    raw_x = df_tmp.iloc[:, 1]
+    raw_y = df_tmp.iloc[:, 0]
+
+    if (
+        raw_x.median() > gc.loc[sample, "Global_left"] * 100
+        or raw_y.median() > gc.loc[sample, "Global_top"] * 100
+    ):
+        print("Detected nm-scale transcript coordinates; converting to µm")
+        df_tmp = df_tmp / 1000
+    else:
+        print(
+            "Transcript coordinates already appear to be in µm; "
+            "no conversion applied"
+        )
+
+    df_tmp.columns = [
+        "y",
+        "x",
+    ]
+
+    df_tmp["x"] = (
+        df_tmp["x"]
+        - gc.loc[sample, "Global_left"]
+    ) * high_res_scale
+
+    df_tmp["y"] = (
+        df_tmp["y"]
+        - gc.loc[sample, "Global_top"]
+    ) * high_res_scale
+
+    spots = df_tmp
+
+    print(
+        "Transcript coordinate range:",
+        f"x={spots['x'].min():.2f} to {spots['x'].max():.2f},",
+        f"y={spots['y'].min():.2f} to {spots['y'].max():.2f}",
+    )
+
+    gene_str_to_int = (
+        dega.pre.boundary_tile._get_name_mapping(
+            path_landscape_files,
+            layer="transcript",
+        )
+    )
+
+    # Dynamic transcript tile bounds
     tile_bounds = {
-        "x_min": 0,
-        "x_max": int(np.ceil(spots["x"].max() / tile_size) * tile_size),
-        "y_min": 0,
-        "y_max": int(np.ceil(spots["y"].max() / tile_size) * tile_size),
+        "x_min": int(
+            np.floor(spots["x"].min() / tile_size) * tile_size
+        ),
+        "x_max": int(
+            np.ceil(spots["x"].max() / tile_size) * tile_size
+        ),
+        "y_min": int(
+            np.floor(spots["y"].min() / tile_size) * tile_size
+        ),
+        "y_max": int(
+            np.ceil(spots["y"].max() / tile_size) * tile_size
+        ),
     }
 
-    n_tiles_x = int(np.ceil((tile_bounds["x_max"] - tile_bounds["x_min"]) / tile_size))
-    n_tiles_y = int(np.ceil((tile_bounds["y_max"] - tile_bounds["y_min"]) / tile_size))
+    print(
+        "Transcript tile bounds:",
+        tile_bounds,
+    )
 
-    sbg.reset_index(inplace=True)
+    n_tiles_x = int(
+        np.ceil(
+            (tile_bounds["x_max"] - tile_bounds["x_min"])
+            / tile_size
+        )
+    )
+
+    n_tiles_y = int(
+        np.ceil(
+            (tile_bounds["y_max"] - tile_bounds["y_min"])
+            / tile_size
+        )
+    )
+
+    sbg.reset_index(
+        inplace=True
+    )
+
     spots.index = sbg.index
-    del sbg[0]
-    sbg = make_column_names_unique_fast(sbg)
 
-    trx_files_path = path_landscape_files + "/transcript_tiles"
-    os.makedirs(trx_files_path, exist_ok=True)
+    del sbg[0]
+
+    sbg = make_column_names_unique_fast(
+        sbg
+    )
+
+    trx_files_path = (
+        path_landscape_files
+        + "/transcript_tiles"
+    )
+
+    os.makedirs(
+        trx_files_path,
+        exist_ok=True,
+    )
 
     dega.pre.write_pseudotranscripts_from_sbg(
         spots=spots,
@@ -399,21 +706,24 @@ def main(
         path_output=trx_files_path,
         jitter=jitter,
         coarse_tile_factor=10,
-        rng=np.random.default_rng() # np.random.Generator
+        rng=np.random.default_rng(),
     )
 
     print("Done.")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="IST-Celldega-LandscapeFiles-Preprocess"
     )
+
     parser.add_argument("--data_dir", type=str)
     parser.add_argument("--sample", type=str)
     parser.add_argument("--path_landscape_files", type=str)
     parser.add_argument("--tile_size", type=int)
     parser.add_argument("--image_scale", type=float)
     parser.add_argument("--jitter", type=int)
+
     args = parser.parse_args()
 
     main(
