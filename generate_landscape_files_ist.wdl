@@ -48,7 +48,7 @@ task generate_landscape_files {
 
     export SAMPLE DATA_ROOT OUTDIR
 
-    echo "Running celldega..."
+    echo "Running celldega $(python3 -c 'import celldega; print(celldega.__version__)') (image: ~{celldega_docker_image})"
     python3 <<'PY'
 import os
 import celldega as dega

@@ -54,7 +54,7 @@ task generate_landscape_files {
 
     image_filename=$(basename ~{image_file_path})
 
-    echo "Running celldega..."
+    echo "Running celldega $(python3 -c 'import celldega; print(celldega.__version__)') (image: ~{celldega_docker_image})"
 
     python3 /opt/Visium_HD_Landscape_Pre_process.py \
         --data_dir "${DATA_ROOT}" \

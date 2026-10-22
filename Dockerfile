@@ -58,9 +58,14 @@ RUN gcloud --version && gsutil version -l && aws --version
 # Set it to pin a reproducible build, e.g. --build-arg CELLDEGA_VERSION=0.24.1
 ARG CELLDEGA_VERSION=
 
-# Docker caches the layer below, so an unchanged Dockerfile will reuse whatever
-# celldega was latest when the image was FIRST built. Vary this to force pip to
-# re-resolve, e.g. --build-arg CACHEBUST=$(date +%s)
+# Docker caches the pip layer below, so an unchanged Dockerfile would reuse
+# whatever celldega was latest when the image was FIRST built. To always pick up
+# the newest release, ADD fetches celldega's PyPI metadata on every build: when
+# a new release is published the file content changes, which invalidates the
+# cache for every layer after it and forces pip to re-resolve.
+ADD https://pypi.org/pypi/celldega/json /tmp/celldega_pypi.json
+
+# Manual override: --build-arg CACHEBUST=$(date +%s) forces a reinstall regardless.
 ARG CACHEBUST=0
 
 # pyvips is needed by _convert_to_png / make_deepzoom_pyramid. It is optional in
@@ -82,6 +87,12 @@ RUN echo "cachebust=${CACHEBUST}" && \
 RUN python -c "import celldega, celldega.pre as pre, pyvips; \
     assert pre.pyvips is not None, 'pyvips did not load (check libvips and the pyvips pin)'; \
     print('celldega', celldega.__version__, '| pyvips', pyvips.__version__)"
+
+# When no version is pinned, fail the build if the installed celldega is not the
+# newest release on PyPI (guards against a stale cached layer).
+RUN if [ -z "${CELLDEGA_VERSION}" ]; then \
+      python -c "import json, celldega; latest = json.load(open('/tmp/celldega_pypi.json'))['info']['version']; assert celldega.__version__ == latest, f'celldega {celldega.__version__} != latest on PyPI {latest}'; print('celldega is latest:', latest)"; \
+    fi
 
 # --- Copy Python scripts ---
 WORKDIR /opt

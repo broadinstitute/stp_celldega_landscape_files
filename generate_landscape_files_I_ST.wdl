@@ -327,7 +327,7 @@ task generate_landscape_files {
     find "${IN_DIR}" -type f -print
 
 
-    echo "Running celldega..."
+    echo "Running celldega $(python3 -c 'import celldega; print(celldega.__version__)') (image: ~{celldega_docker_image})"
 
     python3 /opt/IST_Landscape_Pre-process.py \
       --data_dir "${DATA_ROOT}" \
