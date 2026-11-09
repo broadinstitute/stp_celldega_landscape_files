@@ -74,10 +74,12 @@ ARG CACHEBUST=0
 # geopandas, matplotlib, numpy, pandas, polars, tifffile, scipy and shapely are
 # already celldega runtime deps, so they are resolved with celldega's own pins
 # (e.g. numpy>=2, shapely>=2.0,<2.2) rather than floating free.
+# The [scanpy] extra adds scanpy, which the Xenium WDL needs to build the
+# Clustergram markers.zarr store (zarr>=3 and anndata>=0.12 are core celldega deps).
 RUN echo "cachebust=${CACHEBUST}" && \
     pip install --upgrade pip && \
     pip install --no-cache-dir \
-      "celldega${CELLDEGA_VERSION:+==${CELLDEGA_VERSION}}" \
+      "celldega[scanpy]${CELLDEGA_VERSION:+==${CELLDEGA_VERSION}}" \
       "pyvips~=2.2.2"
 
 # --- Verify celldega ---
@@ -87,6 +89,13 @@ RUN echo "cachebust=${CACHEBUST}" && \
 RUN python -c "import celldega, celldega.pre as pre, pyvips; \
     assert pre.pyvips is not None, 'pyvips did not load (check libvips and the pyvips pin)'; \
     print('celldega', celldega.__version__, '| pyvips', pyvips.__version__)"
+
+# markers.zarr (Xenium WDL) needs zarr >= 3, anndata >= 0.12 and scanpy alongside celldega.
+RUN python -c "import celldega, zarr, anndata, scanpy; \
+    from packaging.version import Version as V; \
+    assert V(zarr.__version__) >= V('3'), zarr.__version__; \
+    assert V(anndata.__version__) >= V('0.12'), anndata.__version__; \
+    print('zarr', zarr.__version__, '| anndata', anndata.__version__, '| scanpy', scanpy.__version__)"
 
 # When no version is pinned, fail the build if the installed celldega is not the
 # newest release on PyPI (guards against a stale cached layer).
