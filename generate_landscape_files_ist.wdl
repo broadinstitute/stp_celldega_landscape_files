@@ -114,39 +114,23 @@ cells = ad.AnnData(
     obs=pd.DataFrame({"leiden": pd.Categorical(cell_cluster.values, categories=clusters)}, index=cell_cluster.index),
     var=pd.DataFrame(index=genes),
 )
+cells.uns["leiden_colors"] = meta_cluster.loc[clusters, "color"].tolist()    # same colors as the Landscape
 print(f"{cells.n_obs:,} cells x {cells.n_vars:,} genes; {int(cells.obs['leiden'].isna().sum()):,} cells without a cluster are ignored")
 
-# Marker ranking on log-normalized counts
+# Marker ranking on log-normalized counts (each cluster vs the rest)
 sc.pp.normalize_total(cells)
 sc.pp.log1p(cells)
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     sc.tl.rank_genes_groups(cells, groupby="leiden", method="t-test", use_raw=False, n_genes=cells.n_vars)
-markers = sc.get.rank_genes_groups_df(cells, group=None)
 # Color each gene by the cluster where its marker score is highest
+markers = sc.get.rank_genes_groups_df(cells, group=None)
 best_group = markers.sort_values("scores", ascending=False).drop_duplicates("names").set_index("names")["group"]
+cells.var["leiden_marker"] = pd.Categorical(best_group.reindex(cells.var_names), categories=clusters)
 
-# Fraction of cells expressing each gene per cluster (drives the dot size)
-codes = cells.obs["leiden"].cat.codes.to_numpy()
-clustered = codes >= 0
-membership = sp.csr_matrix(
-    (np.ones(clustered.sum()), (codes[clustered], np.flatnonzero(clustered))),
-    shape=(len(clusters), cells.n_obs),
-)
-fraction_expressing = (membership @ (cells.X > 0).astype("float32")).toarray() / np.asarray(membership.sum(axis=1))
-
-# Cluster signatures (clusters x genes) from df_sig, carrying the marker ranks
-signatures = ad.AnnData(df_sig[clusters].T.astype("float32").copy())
-signatures.obs["leiden"] = pd.Categorical(clusters, categories=clusters)
-signatures.obs["color"] = meta_cluster.loc[clusters, "color"].to_numpy()     # same colors as the Landscape
-signatures.var["leiden_marker"] = pd.Categorical(best_group.reindex(signatures.var_names), categories=clusters)
-signatures.uns["rank_genes_groups"] = cells.uns["rank_genes_groups"]
-
-mat = dega.clust.Matrix(
-    signatures, col_attr=["leiden"], row_attr=["leiden_marker"],
-    col_entity={"entity": "cell", "attr": "leiden"},
-)
-mat.set_size_matrix(ad.AnnData(fraction_expressing, obs=signatures.obs.copy(), var=signatures.var.copy()))
+# Celldega aggregates the cells into cluster signatures (mean expression) and the
+# fraction of cells expressing each gene (dot size), reusing the ranks computed above.
+mat = dega.clust.Matrix(cells, groupby="leiden", col_attr=["leiden"], row_attr=["leiden_marker"])
 mat.norm("row", by="zscore")
 mat.cluster(view="rank_genes_groups", levels=MARKER_LEVELS)
 
