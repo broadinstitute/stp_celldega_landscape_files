@@ -151,9 +151,89 @@ def patch_zarr_short_object_chunks():
 
     cls._short_chunk_patch = True
 
+def verify_atera_barcodes(bundle):
+    """Check that the patched zarr read of obs/barcode returns exactly the stored values.
+
+    Reads the barcodes twice -- through zarr (with the patch) and straight from the zip with
+    numcodecs -- and requires identical values, the declared length, no empty strings, and that
+    every barcode is a cell in cells.zarr.zip. Raises (failing the job in seconds) otherwise.
+    """
+    import json
+    import zipfile
+    from pathlib import Path
+
+    import numcodecs
+    import numpy as np
+    import zarr
+
+    bundle = Path(bundle)
+    cbg_path = bundle / "cell_feature_matrix.zarr.zip"
+
+    # 1) the patched zarr read
+    root = zarr.open_group(store=zarr.storage.ZipStore(str(cbg_path), mode="r"), mode="r")
+    via_zarr = np.asarray(root["obs"]["barcode"][:], dtype=object).astype(str)
+    n_rows = int(tuple(root["X"].attrs["shape"])[0])
+
+    # 2) an independent read: decode the raw stored chunks with numcodecs, bypassing zarr
+    with zipfile.ZipFile(cbg_path) as zf:
+        meta_name = next(n for n in zf.namelist() if n.endswith("obs/barcode/.zarray"))
+        prefix = meta_name[: -len(".zarray")]
+        meta = json.loads(zf.read(meta_name))
+        if meta["dtype"] != "|O":
+            raise RuntimeError(f"obs/barcode has dtype {meta['dtype']}, not a string-object array; cannot verify")
+        length, chunk_len = meta["shape"][0], meta["chunks"][0]
+        compressor = numcodecs.get_codec(meta["compressor"]) if meta.get("compressor") else None
+        filters = [numcodecs.get_codec(f) for f in (meta.get("filters") or [])]
+        parts = []
+        n_chunks = -(-length // chunk_len)
+        for i in range(n_chunks):
+            data = zf.read(f"{prefix}{i}")
+            if compressor is not None:
+                data = compressor.decode(data)
+            for f in reversed(filters):
+                data = f.decode(data)
+            values = np.asarray(data, dtype=object).reshape(-1)
+            expected = min(chunk_len, length - i * chunk_len)    # real values in this chunk
+            if len(values) < expected or (i < n_chunks - 1 and len(values) != chunk_len):
+                raise RuntimeError(f"obs/barcode chunk {i} holds {len(values)} values, expected {expected}")
+            parts.append(values[:expected])
+        independent = np.concatenate(parts).astype(str)
+
+    problems = []
+    if len(via_zarr) != length:
+        problems.append(f"zarr read returned {len(via_zarr)} barcodes, the array declares {length}")
+    if length != n_rows:
+        problems.append(f"{length} barcodes but the matrix has {n_rows} rows")
+    if not np.array_equal(via_zarr, independent):
+        problems.append("the patched zarr read differs from the independent numcodecs read")
+    if (via_zarr == "").any():
+        problems.append("empty barcodes in the result (padding leaked)")
+
+    # 3) cross-check against a second array that never needed the patch: the cell ids in cells.zarr.zip
+    try:
+        from celldega.pre.atera import _encode_cell_ids
+    except ImportError:
+        _encode_cell_ids = None
+        print("note: could not import celldega's cell-id encoder; skipping the cells.zarr.zip cross-check")
+    if _encode_cell_ids is not None:
+        cells = zarr.open_group(store=zarr.storage.ZipStore(str(bundle / "cells.zarr.zip"), mode="r"), mode="r")
+        cell_ids = _encode_cell_ids(cells["cell_id"][:])
+        in_cells = np.isin(via_zarr, cell_ids)
+        if not in_cells.all():
+            problems.append(f"{int((~in_cells).sum())} barcodes are not cell ids in cells.zarr.zip")
+        print(f"verify: {len(via_zarr):,} barcodes; {int(in_cells.sum()):,} found in cells.zarr.zip ({len(cell_ids):,} cells)")
+
+    if problems:
+        raise RuntimeError("Atera barcode check FAILED: " + "; ".join(problems))
+    print(f"verify: OK -- patched zarr read == independent read for all {len(via_zarr):,} barcodes "
+          f"(chunk size {chunk_len:,}, {n_chunks} chunk(s))")
+
+
 if "~{technology}" == "Atera":
     patch_zarr_short_object_chunks()
     print("Applied the zarr short string-chunk patch for Atera")
+    # Fail fast (seconds, before the long run) unless the patched read returns exactly the stored barcodes
+    verify_atera_barcodes(os.path.join(os.environ["DATA_ROOT"], os.environ["SAMPLE"]))
 
 dega.pre.main(
     sample=os.environ["SAMPLE"],
