@@ -30,15 +30,25 @@ task generate_landscape_files {
 
     mkdir -p "${IN_DIR}" "${OUTDIR}"
 
+    # Atera bundles also hold large files celldega never reads (3D morphology,
+    # binned transcripts, the CSC matrix, diffexp output); skip them to save
+    # download time and local disk.
+    AWS_EXTRA_EXCLUDES=()
+    GCS_EXTRA_EXCLUDES=()
+    if [[ "~{technology}" == "Atera" ]]; then
+      AWS_EXTRA_EXCLUDES=(--exclude "morphology_3d/*" --exclude "diffexp_genes/*" --exclude "binned_transcripts.zarr.zip" --exclude "csc_cell_feature_matrix.zarr.zip")
+      GCS_EXTRA_EXCLUDES=(--exclude "^(morphology_3d/|diffexp_genes/|binned_transcripts\.zarr\.zip$|csc_cell_feature_matrix\.zarr\.zip$)")
+    fi
+
     echo "Checking data_dir source: ${USER_DATA_DIR}"
 
     if [[ "${USER_DATA_DIR}" == s3://* ]]; then
       echo "Detected AWS S3 path, using aws s3 sync..."
-      aws s3 sync "${USER_DATA_DIR%/}/${SAMPLE}" "${IN_DIR}/" --exclude "._*" --exclude ".DS_Store"
+      aws s3 sync "${USER_DATA_DIR%/}/${SAMPLE}" "${IN_DIR}/" --exclude "._*" --exclude ".DS_Store" ${AWS_EXTRA_EXCLUDES[@]+"${AWS_EXTRA_EXCLUDES[@]}"}
 
     elif [[ "${USER_DATA_DIR}" == gs://* ]]; then
       echo "Detected Google Cloud Storage path, using gcloud storage rsync..."
-      gcloud storage rsync -r "${USER_DATA_DIR%/}/${SAMPLE}" "${IN_DIR}/"
+      gcloud storage rsync -r ${GCS_EXTRA_EXCLUDES[@]+"${GCS_EXTRA_EXCLUDES[@]}"} "${USER_DATA_DIR%/}/${SAMPLE}" "${IN_DIR}/"
 
     else
       echo "ERROR: data_dir must start with s3:// or gs://"
@@ -58,8 +68,9 @@ task generate_landscape_files {
       for f in experiment.spatial cells.zarr.zip transcripts.zarr.zip cell_feature_matrix.zarr.zip; do
         [[ -e "${IN_DIR}/${f}" ]] || ATERA_MISSING+=("${f}")
       done
-      if [[ -z "$(find "${IN_DIR}/morphology_2d" -maxdepth 1 -name '*.ome.tif*' -print -quit 2>/dev/null)" ]]; then
-        ATERA_MISSING+=("morphology_2d/*.ome.tif")
+      # celldega reads morphology_2d/ch*.ome.tif (ch0000 = DAPI)
+      if [[ -z "$(find "${IN_DIR}/morphology_2d" -maxdepth 1 -name 'ch*.ome.tif' -print -quit 2>/dev/null)" ]]; then
+        ATERA_MISSING+=("morphology_2d/ch*.ome.tif")
       fi
       if [[ "${#ATERA_MISSING[@]}" -gt 0 ]]; then
         echo "ERROR: Atera bundle ${USER_DATA_DIR%/}/${SAMPLE} is missing: ${ATERA_MISSING[*]}" >&2
