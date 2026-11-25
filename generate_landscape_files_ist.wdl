@@ -84,6 +84,77 @@ task generate_landscape_files {
     python3 <<'PY'
 import os
 import celldega as dega
+
+# Atera bundles store the last chunk of some string arrays (e.g. obs/barcode in
+# cell_feature_matrix.zarr.zip) without padding it to the declared chunk size, which
+# zarr 3 refuses to read ("cannot reshape array of size 575154 into shape (1000000,)").
+# Retry just those chunks with padding; everything else is read as before.
+def patch_zarr_short_object_chunks():
+    """Let zarr 3 read zarr v2 string chunks that are shorter than the declared chunk shape.
+
+    The Atera bundles store the last chunk of some string arrays (e.g. obs/barcode) with only the
+    real values, not padded to the chunk size (575154 values for a 1,000,000 chunk), and zarr 3
+    refuses to reshape them. Retry such a chunk with padding. Chunks that already decode fine,
+    and non-string arrays, are untouched.
+    """
+    import numpy as np
+    from numcodecs.compat import ensure_ndarray_like
+    from zarr.codecs import _v2
+    from zarr.registry import get_ndbuffer_class
+
+    cls = _v2.V2Codec
+    if getattr(cls, "_short_chunk_patch", False):
+        return
+
+    def decode_padded(codec, chunk_bytes, chunk_spec):
+        data = chunk_bytes.as_array_like()
+        chunk = codec.compressor.decode(data) if codec.compressor else data
+        for f in reversed(codec.filters or ()):
+            chunk = f.decode(chunk)
+        chunk = ensure_ndarray_like(chunk)
+        if chunk.dtype != object:
+            raise ValueError("cannot reshape short non-string chunk")
+        chunk = chunk.reshape(-1, order="A")
+        expected = int(np.prod(chunk_spec.shape))
+        if chunk.size > expected:
+            raise ValueError(f"cannot reshape array of size {chunk.size} into shape {chunk_spec.shape}")
+        fill = getattr(chunk_spec, "fill_value", None)
+        padded = np.full(expected, "" if fill is None else fill, dtype=object)
+        padded[: chunk.size] = chunk
+        padded = padded.reshape(chunk_spec.shape, order=chunk_spec.order)
+        return get_ndbuffer_class().from_ndarray_like(padded)
+
+    original_single = cls._decode_single
+
+    async def _decode_single(self, chunk_bytes, chunk_spec):
+        try:
+            return await original_single(self, chunk_bytes, chunk_spec)
+        except ValueError as exc:
+            if "cannot reshape" not in str(exc):
+                raise
+            return decode_padded(self, chunk_bytes, chunk_spec)
+
+    cls._decode_single = _decode_single
+
+    original_sync = getattr(cls, "_decode_sync", None)
+    if original_sync is not None:   # newer zarr 3 versions decode through a sync method
+
+        def _decode_sync(self, chunk_bytes, chunk_spec):
+            try:
+                return original_sync(self, chunk_bytes, chunk_spec)
+            except ValueError as exc:
+                if "cannot reshape" not in str(exc):
+                    raise
+                return decode_padded(self, chunk_bytes, chunk_spec)
+
+        cls._decode_sync = _decode_sync
+
+    cls._short_chunk_patch = True
+
+if "~{technology}" == "Atera":
+    patch_zarr_short_object_chunks()
+    print("Applied the zarr short string-chunk patch for Atera")
+
 dega.pre.main(
     sample=os.environ["SAMPLE"],
     data_root_dir=os.environ["DATA_ROOT"],
