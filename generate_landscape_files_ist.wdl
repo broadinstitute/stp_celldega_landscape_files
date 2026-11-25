@@ -9,6 +9,10 @@ task generate_landscape_files {
     Int tile_size
     String celldega_docker_image
     String image_tile_layer
+    # "Xenium", "MERSCOPE" or "Atera". Atera bundles are detected by celldega
+    # itself (experiment.spatial); here it only enables the input check below.
+    String technology = "Xenium"
+    Int disk_gb = 200
   }
 
   command <<<
@@ -44,6 +48,23 @@ task generate_landscape_files {
     if [[ -z "$(find "${IN_DIR}" -type f -print -quit)" ]]; then
       echo "ERROR: No files found under ${USER_DATA_DIR}/${SAMPLE}." >&2
       exit 2
+    fi
+
+    # A 10x Atera bundle is what celldega's Xenium pipeline reads through its
+    # Atera readers; fail early (before the long run) if the bundle is incomplete.
+    if [[ "~{technology}" == "Atera" ]]; then
+      echo "Checking Atera bundle in ${IN_DIR}..."
+      ATERA_MISSING=()
+      for f in experiment.spatial cells.zarr.zip transcripts.zarr.zip cell_feature_matrix.zarr.zip; do
+        [[ -e "${IN_DIR}/${f}" ]] || ATERA_MISSING+=("${f}")
+      done
+      if [[ -z "$(find "${IN_DIR}/morphology_2d" -maxdepth 1 -name '*.ome.tif*' -print -quit 2>/dev/null)" ]]; then
+        ATERA_MISSING+=("morphology_2d/*.ome.tif")
+      fi
+      if [[ "${#ATERA_MISSING[@]}" -gt 0 ]]; then
+        echo "ERROR: Atera bundle ${USER_DATA_DIR%/}/${SAMPLE} is missing: ${ATERA_MISSING[*]}" >&2
+        exit 2
+      fi
     fi
 
     export SAMPLE DATA_ROOT OUTDIR
@@ -93,7 +114,12 @@ out_path = region_dir / "markers.zarr"
 meta_cluster = pd.read_parquet(region_dir / "cell_clusters" / "meta_cluster.parquet")
 df_sig = pd.read_parquet(region_dir / "df_sig.parquet")
 cell_cluster = pd.read_parquet(region_dir / "cell_clusters" / "cluster.parquet")["cluster"].astype(str)
-clusters = sorted(df_sig.columns, key=int)       # Leiden cluster labels
+def _cluster_key(label):
+    # numeric labels sort numerically (2 before 10); anything else sorts by name
+    s = str(label)
+    return (0, int(s), s) if s.lstrip("-").isdigit() else (1, 0, s)
+
+clusters = sorted(df_sig.columns, key=_cluster_key)   # Leiden cluster labels
 genes = df_sig.index.tolist()
 
 # Cell x gene counts from the per-gene cbg files (sparse: cell position -> count)
@@ -168,7 +194,7 @@ PY
   runtime {
     docker: celldega_docker_image
     memory: "200 GB"
-    disks: "local-disk 200 HDD"
+    disks: "local-disk ~{disk_gb} HDD"
     preemptible: 0
   }
 }

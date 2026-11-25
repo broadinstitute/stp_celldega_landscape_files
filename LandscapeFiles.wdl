@@ -17,10 +17,16 @@ workflow LandscapeFiles {
     Int jitter = 1
     Float image_scale = 1.0
     String image_tile_layer = "all"
+    # Local disk (GB) for the Xenium/MERSCOPE/Atera task. Atera bundles are large
+    # (transcripts + morphology inputs plus ~20 GB of DegaFiles for a WTA region),
+    # so raise this for those samples.
+    Int disk_gb = 200
     String celldega_docker_image = "jishar7/celldega_landscape_files:main_V1.9"
   }
 
-  if (technology == "Xenium" || technology == "MERSCOPE") {
+  # Atera is a Xenium-class bundle: celldega's pre.main detects it by its
+  # experiment.spatial file and uses the Atera readers.
+  if (technology == "Xenium" || technology == "MERSCOPE" || technology == "Atera") {
     call ist.generate_landscape_files as ist_run {
       input:
         sample = sample,
@@ -28,7 +34,9 @@ workflow LandscapeFiles {
         bucket_path_landscape_files = bucket_path_landscape_files,
         tile_size = tile_size,
         celldega_docker_image = celldega_docker_image,
-        image_tile_layer = image_tile_layer
+        image_tile_layer = image_tile_layer,
+        technology = technology,
+        disk_gb = disk_gb
     }
   }
 
