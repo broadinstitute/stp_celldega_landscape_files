@@ -41,7 +41,7 @@ RUN set -eux; \
     echo "deb [signed-by=/etc/apt/keyrings/google-cloud-sdk.gpg] http://packages.cloud.google.com/apt cloud-sdk main" \
       > /etc/apt/sources.list.d/google-cloud-sdk.list && \
     apt-get update && \
-    apt-get install -y --no-install-recommends google-cloud-sdk && \
+    apt-get install -y --no-install-recommends google-cloud-cli && \
     # --- AWS CLI v2 ---
     curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/tmp/awscliv2.zip" && \
     unzip /tmp/awscliv2.zip -d /tmp && \
